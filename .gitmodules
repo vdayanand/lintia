@@ -1,0 +1,3 @@
+[submodule "tree-sitter-julia"]
+	path = tree-sitter-julia
+	url = https://github.com/tree-sitter/tree-sitter-julia
