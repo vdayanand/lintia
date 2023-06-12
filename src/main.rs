@@ -102,7 +102,25 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) {
                     eval(&secondnode, src, env);
                 }
             }
-        }
+        },
+        "if_statement" => {
+            let mut tc = node.walk();
+            let mut ifenv = Vec::<String>::new();
+            ifenv.extend_from_slice(env);
+            for child in node.named_children(&mut tc).skip(1)            {
+                if child.kind() == "assignment_expression" {
+                    if let Some(lhs) = child.named_child(0) {
+                        if lhs.kind() == "identifier"{
+                            ifenv.push(node_value(&lhs, src))
+                        }
+                    }
+                    if let Some(rhs) = child.named_child(1) {
+                         eval(&child, src, &ifenv.clone())
+                    }
+                }
+                eval(&child, src, &ifenv.clone());
+            }
+        },
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
@@ -113,7 +131,12 @@ fn main() {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
-    let source_code = "return a+1";
+    let source_code = r#"
+     if x
+        y = 10
+        x = y + 1
+     end
+     "#;
     let tree = parser.parse(source_code, None).unwrap();
     let root_node = tree.root_node();
     let env = Vec::<String>::new();
