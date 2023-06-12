@@ -4,10 +4,15 @@ extern "C" {
     fn tree_sitter_julia() -> Language;
 }
 
-fn print_node(node: &tree_sitter::Node) {
+fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("Kind: {}", node.kind());
     println!("has error: {}", node.has_error());
-    println!("Child count: {}", node.child_count());
+    println!("Child count: {}", node.named_child_count());
+    let mut tc = node.walk();
+    for (id, child) in node.named_children(&mut tc).enumerate(){
+        println!("Child({}): Kind=> {}", id, child.kind());
+        println!("Child({}): value=> {}", id, node_value(&child, src));
+    }
 }
 
 fn row(node: &Node, src: &String) -> usize{
@@ -17,6 +22,13 @@ fn row(node: &Node, src: &String) -> usize{
 fn col(node: &Node, src: &String) -> usize{
     let p =  node.start_position();
     return p.column;
+}
+
+fn node_value(node: &Node, src: &String) -> String{
+    if let Ok(val) = node.utf8_text(src.as_bytes()) {
+        return val.to_string()
+    }
+    return "".to_string()
 }
 fn analyse(node: &Node, src: &String, env: &Vec<String>) {
    if let Ok(val) = node.utf8_text(src.as_bytes()) {
@@ -35,6 +47,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>){
             }
         },
         "assignment_expression" => {
+            if let Some(rnode) = node.named_child(1) {
+                eval(&rnode, src, env)
+            }
+        },
+        "subscript_expression" => {
+            print_node(node, src);
             if let Some(rnode) = node.named_child(1) {
                 eval(&rnode, src, env)
             }
@@ -73,10 +91,9 @@ fn main() {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
-    let source_code = "a = x + (y + 1)";
+    let source_code = "a[1][2]";
     let tree = parser.parse(source_code, None).unwrap();
     let root_node = tree.root_node();
     let env = Vec::<String>::new();
-    //let env = vec![String::from("x")];
     eval(&root_node, &String::from(source_code), &env);
 }
