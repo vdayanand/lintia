@@ -1,5 +1,5 @@
-use tree_sitter::{Language, Parser, Node};
 use colored::Colorize;
+use tree_sitter::{Language, Node, Parser};
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -10,94 +10,99 @@ fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("has error: {}", node.has_error());
     println!("Child count: {}", node.named_child_count());
     let mut tc = node.walk();
-    for (id, child) in node.named_children(&mut tc).enumerate(){
+    for (id, child) in node.named_children(&mut tc).enumerate() {
         println!("Child({}): Kind => {}", id, child.kind().yellow());
-        println!("Child({}): value => {}", id, node_value(&child, src).yellow());
+        println!(
+            "Child({}): value => {}",
+            id,
+            node_value(&child, src).yellow()
+        );
     }
 }
 
-fn row(node: &Node, src: &String) -> usize{
-    let p =  node.start_position();
+fn row(node: &Node, src: &String) -> usize {
+    let p = node.start_position();
     return p.row;
 }
-fn col(node: &Node, src: &String) -> usize{
-    let p =  node.start_position();
+fn col(node: &Node, src: &String) -> usize {
+    let p = node.start_position();
     return p.column;
 }
 
-fn node_value(node: &Node, src: &String) -> String{
+fn node_value(node: &Node, src: &String) -> String {
     if let Ok(val) = node.utf8_text(src.as_bytes()) {
-        return val.to_string()
+        return val.to_string();
     }
-    return "".to_string()
+    return "".to_string();
 }
 fn analyse(node: &Node, src: &String, env: &Vec<String>) {
-   if let Ok(val) = node.utf8_text(src.as_bytes()) {
+    if let Ok(val) = node.utf8_text(src.as_bytes()) {
         let sym = val.to_string();
         if !env.contains(&sym.to_string()) {
-            println!("Undefined symbol {} found at {}:{}, ", sym.red(), row(&node, src), col(&node, src));
+            println!(
+                "Undefined symbol {} found at {}:{}, ",
+                sym.red(),
+                row(&node, src),
+                col(&node, src)
+            );
         }
     }
 }
-fn eval(node: &Node, src: &String, env: &Vec<String>){
+fn eval(node: &Node, src: &String, env: &Vec<String>) {
     match node.kind() {
         "source_file" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 eval(&child, src, env);
             }
-        },
+        }
         "assignment_expression" => {
             if let Some(rnode) = node.named_child(1) {
                 eval(&rnode, src, env)
             }
-        },
+        }
         "return_statement" => {
             print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
                     analyse(&rnode, src, env)
-                }
-                else {
+                } else {
                     eval(&rnode, src, env)
                 }
             }
-        },
+        }
         "subscript_expression" => {
             print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
                     analyse(&rnode, src, env)
-                }
-                else {
+                } else {
                     eval(&rnode, src, env)
                 }
             }
-        },
+        }
         "parenthesized_expression" => {
             if let Some(rnode) = node.named_child(0) {
                 eval(&rnode, src, env)
             }
-        },
+        }
         "number" => (),
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
                     analyse(&firstnode, src, env)
-                }
-                else {
+                } else {
                     eval(&firstnode, src, env)
                 }
             }
             if let Some(secondnode) = node.named_child(1) {
                 if secondnode.kind() == "identifier" {
                     analyse(&secondnode, src, env)
-                }
-                else {
+                } else {
                     eval(&secondnode, src, env);
                 }
             }
-        },
+        }
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
