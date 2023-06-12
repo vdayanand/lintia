@@ -8,4 +8,6 @@ edition = "2021"
 cc="*"
 
 [dependencies]
+colored = "2.0.0"
+colorize = "0.1.0"
 tree-sitter = "0.20.10"

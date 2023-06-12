@@ -1,17 +1,18 @@
 use tree_sitter::{Language, Parser, Node};
+use colored::Colorize;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
 
 fn print_node(node: &tree_sitter::Node, src: &String) {
-    println!("Kind: {}", node.kind());
+    println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
     println!("Child count: {}", node.named_child_count());
     let mut tc = node.walk();
     for (id, child) in node.named_children(&mut tc).enumerate(){
-        println!("Child({}): Kind=> {}", id, child.kind());
-        println!("Child({}): value=> {}", id, node_value(&child, src));
+        println!("Child({}): Kind => {}", id, child.kind().yellow());
+        println!("Child({}): value => {}", id, node_value(&child, src).yellow());
     }
 }
 
@@ -34,7 +35,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) {
    if let Ok(val) = node.utf8_text(src.as_bytes()) {
         let sym = val.to_string();
         if !env.contains(&sym.to_string()) {
-            println!("Undefined symbol {} found at {}:{}, ", sym, row(&node, src), col(&node, src));
+            println!("Undefined symbol {} found at {}:{}, ", sym.red(), row(&node, src), col(&node, src));
         }
     }
 }
@@ -51,10 +52,26 @@ fn eval(node: &Node, src: &String, env: &Vec<String>){
                 eval(&rnode, src, env)
             }
         },
+        "return_statement" => {
+            print_node(node, src);
+            if let Some(rnode) = node.named_child(0) {
+                if rnode.kind() == "identifier" {
+                    analyse(&rnode, src, env)
+                }
+                else {
+                    eval(&rnode, src, env)
+                }
+            }
+        },
         "subscript_expression" => {
             print_node(node, src);
-            if let Some(rnode) = node.named_child(1) {
-                eval(&rnode, src, env)
+            if let Some(rnode) = node.named_child(0) {
+                if rnode.kind() == "identifier" {
+                    analyse(&rnode, src, env)
+                }
+                else {
+                    eval(&rnode, src, env)
+                }
             }
         },
         "parenthesized_expression" => {
@@ -91,7 +108,7 @@ fn main() {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
-    let source_code = "a[1][2]";
+    let source_code = "return a+1";
     let tree = parser.parse(source_code, None).unwrap();
     let root_node = tree.root_node();
     let env = Vec::<String>::new();
