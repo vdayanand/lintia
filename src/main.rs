@@ -4,6 +4,7 @@ use tree_sitter::{Language, Node, Parser};
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
+// #[derive(Debug)]
 struct UndefVar {
     symbol: String,
     row: usize,
@@ -25,11 +26,11 @@ fn print_node(node: &tree_sitter::Node, src: &String) {
     }
 }
 
-fn row(node: &Node, src: &String) -> usize {
+fn row(node: &Node) -> usize {
     let p = node.start_position();
     return p.row;
 }
-fn col(node: &Node, src: &String) -> usize {
+fn col(node: &Node) -> usize {
     let p = node.start_position();
     return p.column;
 }
@@ -45,8 +46,8 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
     if let Ok(val) = node.utf8_text(src.as_bytes()) {
         let sym = val.to_string();
         if !env.contains(&sym.to_string()) {
-            let r = row(&node, src);
-            let c = col(&node, src);
+            let r = row(&node);
+            let c = col(&node);
             return Some(UndefVar {symbol: sym, row: r, column: c})
         }
         return None
@@ -121,7 +122,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
                             ifenv.push(node_value(&lhs, src));
                         }
                     }
-                    if let Some(rhs) = child.named_child(1) {
+                    if let Some(_) = child.named_child(1) {
                          result.extend(eval(&child, src, &ifenv.clone()));
                     }
 
@@ -165,5 +166,24 @@ fn main() {
                 undef.column
             );
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_if() {
+        let source_code = r#"
+         if x
+            y = 10
+            x = z + 1
+         end
+         "#;
+        let err = lint(&source_code).remove(0);
+        let result = err.unwrap();
+        assert_eq!(result.symbol, "z".to_string());
+        assert_eq!(result.row, 3);
+        assert_eq!(result.column, 16);
     }
 }
