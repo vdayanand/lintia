@@ -58,7 +58,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
     let mut result = Vec::<Option<UndefVar>>::new();
     match node.kind() {
-        "source_file" => {
+        "source_file" | "ternary_expression" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -95,6 +95,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
             }
         }
         "number" => (),
+        "identifier" => result.push(analyse(&node, src, env)),
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
@@ -153,7 +154,7 @@ fn main() {
     let source_code = r#"
      if x
         y = 10
-        x = z + 1
+        z = y == 8 ? y : 1
      end
      "#;
     let errs = lint(source_code);
