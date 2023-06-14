@@ -4,7 +4,7 @@ use tree_sitter::{Language, Node, Parser};
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
-// #[derive(Debug)]
+#[derive(Debug)]
 struct UndefVar {
     symbol: String,
     row: usize,
@@ -60,10 +60,17 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
     let mut ifenv = Vec::<String>::new();
     ifenv.extend_from_slice(env);
     for child in node.named_children(&mut tc).skip(from) {
+       print_node(&child, src);
        if child.kind() == "assignment_expression" {
            if let Some(lhs) = child.named_child(0) {
                if lhs.kind() == "identifier"{
                    ifenv.push(node_value(&lhs, src));
+               }
+               if lhs.kind() == "tuple_expression"{
+                   let mut tc = lhs.walk();
+                   for param in lhs.named_children(&mut tc) {
+                       ifenv.push(node_value(&param, src));
+                   }
                }
            }
            if let Some(_) = child.named_child(1) {
@@ -180,12 +187,33 @@ mod tests {
          if x
             y = 10
             x = z + 1
+            (i, j) = (1, 2)
+            x = x + 10
+            m
          end
          "#;
-        let err = lint(&source_code).remove(0);
-        let result = err.unwrap();
-        assert_eq!(result.symbol, "z".to_string());
-        assert_eq!(result.row, 3);
-        assert_eq!(result.column, 16);
+        let mut errs = lint(&source_code);
+        println!("test {:?}", errs);
+        let first = errs.remove(0);
+        if first.is_some() ==  false {
+            panic!("Expected undefvar for z")
+        }
+
+        let one = first.unwrap();
+        assert_eq!(one.symbol, "z".to_string());
+        assert_eq!(one.row, 3);
+        assert_eq!(one.column, 16);
+
+        //remove none
+        let _ = errs.remove(0);
+
+        let sec = errs.remove(0);
+        if sec.is_some() ==  false {
+            panic!("Expected undefvar for k")
+        }
+        let two = sec.unwrap();
+        assert_eq!(two.symbol, "m".to_string());
+        assert_eq!(two.row, 6);
+        assert_eq!(two.column, 12);
     }
 }
