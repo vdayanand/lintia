@@ -56,11 +56,9 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
     return None
 }
 fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usize, result: &mut Vec<Option<UndefVar,>>) {
-    let mut result = Vec::<Option<UndefVar>>::new();
     let mut tc = node.walk();
     let mut ifenv = Vec::<String>::new();
     ifenv.extend_from_slice(env);
-
     for child in node.named_children(&mut tc).skip(from) {
        if child.kind() == "assignment_expression" {
            if let Some(lhs) = child.named_child(0) {
@@ -71,7 +69,6 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
            if let Some(_) = child.named_child(1) {
                 result.extend(eval(&child, src, &ifenv.clone()));
            }
-
        }
        else {
            result.extend(eval(&child, src, &ifenv.clone()));
