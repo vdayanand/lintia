@@ -55,10 +55,33 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
     }
     return None
 }
+fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usize, result: &mut Vec<Option<UndefVar,>>) {
+    let mut result = Vec::<Option<UndefVar>>::new();
+    let mut tc = node.walk();
+    let mut ifenv = Vec::<String>::new();
+    ifenv.extend_from_slice(env);
+
+    for child in node.named_children(&mut tc).skip(from) {
+       if child.kind() == "assignment_expression" {
+           if let Some(lhs) = child.named_child(0) {
+               if lhs.kind() == "identifier"{
+                   ifenv.push(node_value(&lhs, src));
+               }
+           }
+           if let Some(_) = child.named_child(1) {
+                result.extend(eval(&child, src, &ifenv.clone()));
+           }
+
+       }
+       else {
+           result.extend(eval(&child, src, &ifenv.clone()));
+       }
+    }
+}
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
     let mut result = Vec::<Option<UndefVar>>::new();
     match node.kind() {
-        "source_file" | "ternary_expression" => {
+        "source_file" | "ternary_expression" | "tuple_expression" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -112,27 +135,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
                 }
             }
         },
-        "if_statement" => {
-            let mut tc = node.walk();
-            let mut ifenv = Vec::<String>::new();
-            ifenv.extend_from_slice(env);
-            for child in node.named_children(&mut tc).skip(1)            {
-                if child.kind() == "assignment_expression" {
-                    if let Some(lhs) = child.named_child(0) {
-                        if lhs.kind() == "identifier"{
-                            ifenv.push(node_value(&lhs, src));
-                        }
-                    }
-                    if let Some(_) = child.named_child(1) {
-                         result.extend(eval(&child, src, &ifenv.clone()));
-                    }
-
-                }
-                else {
-                    result.extend(eval(&child, src, &ifenv.clone()));
-                }
-            }
-        },
+        "if_statement" => eval_expression_body(node, src, env, 1, &mut result),
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
@@ -154,7 +157,8 @@ fn main() {
     let source_code = r#"
      if x
         y = 10
-        z = y == 8 ? y : 1
+        z = (1, 2,)
+        (i, j) = (1,2,)
      end
      "#;
     let errs = lint(source_code);
