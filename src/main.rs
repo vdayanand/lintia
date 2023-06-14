@@ -55,7 +55,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
     }
     return None
 }
-fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usize, result: &mut Vec<Option<UndefVar,>>) {
+fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usize, result: &mut Vec<UndefVar>) {
     let mut tc = node.walk();
     let mut ifenv = Vec::<String>::new();
     ifenv.extend_from_slice(env);
@@ -82,8 +82,8 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
        }
     }
 }
-fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
-    let mut result = Vec::<Option<UndefVar>>::new();
+fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
+    let mut result = Vec::<UndefVar>::new();
     match node.kind() {
         "source_file" | "ternary_expression" | "tuple_expression" => {
             let mut tc = node.walk();
@@ -100,7 +100,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
             print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
-                    result.push(analyse(&rnode, src, env))
+                    if let Some(failed) = analyse(&rnode, src, env) {
+                        result.push(failed);
+                    }
+
                 } else {
                     result.extend(eval(&rnode, src, env));
                 }
@@ -110,7 +113,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
             print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
-                    result.push(analyse(&rnode, src, env))
+                    if let Some(failed) = analyse(&rnode, src, env) {
+                        result.push(failed);
+                    }
                 } else {
                     result.extend(eval(&rnode, src, env))
                 }
@@ -122,24 +127,32 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
             }
         }
         "number" => (),
-        "identifier" => result.push(analyse(&node, src, env)),
+        "identifier" =>  {
+            if let Some(failed) = analyse(&node, src, env) {
+                result.push(failed);
+            }
+        },
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
-                    result.push(analyse(&firstnode, src, env));
+                    if let Some(failed) = analyse(&firstnode, src, env) {
+                        result.push(failed);
+                    }
                 } else {
                     result.extend(eval(&firstnode, src, env));
                 }
             }
             if let Some(secondnode) = node.named_child(1) {
                 if secondnode.kind() == "identifier" {
-                    result.push(analyse(&secondnode, src, env));
+                    if let Some(failed) = analyse(&secondnode, src, env) {
+                        result.push(failed);
+                    }
                 } else {
                     result.extend(eval(&secondnode, src, env));
                 }
             }
         },
-        "if_statement" => eval_expression_body(node, src, env, 1, &mut result),
+        "if_statement" => eval_expression_body(node, src, env, 0, &mut result),
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
@@ -147,13 +160,13 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<Option<UndefVar,>>{
     return result
 }
 
-fn lint(src: &str) -> Vec<Option<UndefVar>> {
+fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
-    let env = Vec::<String>::new();
+
     return eval(&root_node, &String::from(src), &env)
 }
 
@@ -165,16 +178,15 @@ fn main() {
         (i, j) = (1,2,)
      end
      "#;
-    let errs = lint(source_code);
+    let env = Vec::<String>::new();
+    let errs = lint(source_code, &env);
     for err in errs {
-        if let Some(undef) = err {
-            println!(
-                "Undefined symbol {} found at {}:{} ",
-                undef.symbol.red(),
-                undef.row,
-                undef.column
-            );
-        }
+        println!(
+            "Undefined symbol {} found at {}:{} ",
+            err.symbol.red(),
+            err.row,
+            err.column
+        );
     }
 }
 #[cfg(test)]
@@ -192,26 +204,15 @@ mod tests {
             m
          end
          "#;
-        let mut errs = lint(&source_code);
+        let env = vec!["x".to_string()];
+        let mut errs = lint(&source_code, &env);
         println!("test {:?}", errs);
-        let first = errs.remove(0);
-        if first.is_some() ==  false {
-            panic!("Expected undefvar for z")
-        }
-
-        let one = first.unwrap();
+        let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 3);
         assert_eq!(one.column, 16);
 
-        //remove none
-        let _ = errs.remove(0);
-
-        let sec = errs.remove(0);
-        if sec.is_some() ==  false {
-            panic!("Expected undefvar for k")
-        }
-        let two = sec.unwrap();
+        let two = errs.remove(0);
         assert_eq!(two.symbol, "m".to_string());
         assert_eq!(two.row, 6);
         assert_eq!(two.column, 12);
