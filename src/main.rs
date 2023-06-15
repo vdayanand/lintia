@@ -60,7 +60,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
 
 fn mut_env(node: &Node, src: &String, mut newenv: Vec<String>) -> Vec<String> {
     match node.kind() {
-        "assignment_expression" | "variable_declaration" => {
+        "assignment_expression" | "variable_declaration" | "for_binding" => {
             if let Some(lhs) = node.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
@@ -113,7 +113,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "let_statement" | "if_statement" => {
+        "let_statement" | "if_statement" | "for_statement" => {
             let mut tc = node.walk();
             let mut newenv = Vec::<String>::new();
             newenv.extend_from_slice(env);
@@ -128,7 +128,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.push(failed);
             }
         }
-        "assignment_expression" | "variable_declaration" => {
+        "assignment_expression" | "variable_declaration" | "for_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
             }
@@ -154,6 +154,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         _ => {
+            print_node(node, src);
             println!("Unimplemented kind {}", node.kind());
         }
     };
@@ -172,11 +173,9 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     let x, y=1
-           x
-           y
-           z
-       end
+     let x
+        x
+     end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -206,7 +205,6 @@ mod tests {
          "#;
         let env = vec!["x".to_string()];
         let mut errs = lint(&source_code, &env);
-        println!("test {:?}", errs);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 3);
@@ -216,5 +214,21 @@ mod tests {
         assert_eq!(two.symbol, "m".to_string());
         assert_eq!(two.row, 6);
         assert_eq!(two.column, 12);
+    }
+    #[test]
+    fn test_let() {
+        let source_code = r#"
+         let x
+            x
+            z
+         end
+         "#;
+        let env = vec!["x".to_string()];
+        let mut errs = lint(&source_code, &env);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "z".to_string());
+        assert_eq!(one.row, 3);
+        assert_eq!(one.column, 12);
+
     }
 }
