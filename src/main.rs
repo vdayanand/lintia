@@ -8,7 +8,7 @@ extern "C" {
 struct UndefVar {
     symbol: String,
     row: usize,
-    column: usize
+    column: usize,
 }
 
 fn print_node(node: &tree_sitter::Node, src: &String) {
@@ -16,7 +16,12 @@ fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("has error: {}", node.has_error());
     let mut tc = node.walk();
     for (id, child) in node.named_children(&mut tc).enumerate() {
-        println!("Child({}): {}::{}", id, node_value(&child, src).yellow(), child.kind().yellow());
+        println!(
+            "Child({}): {}::{}",
+            id,
+            node_value(&child, src).yellow(),
+            child.kind().yellow()
+        );
     }
 }
 
@@ -36,47 +41,43 @@ fn node_value(node: &Node, src: &String) -> String {
     return "".to_string();
 }
 
-fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar>{
+fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     if let Ok(val) = node.utf8_text(src.as_bytes()) {
         let sym = val.to_string();
         if !env.contains(&sym.to_string()) {
             let r = row(&node);
             let c = col(&node);
-            return Some(UndefVar {symbol: sym, row: r, column: c})
+            return Some(UndefVar {
+                symbol: sym,
+                row: r,
+                column: c,
+            });
         }
-        return None
+        return None;
+    }
+    return None;
+}
 
-    }
-    return None
-}
-fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usize, result: &mut Vec<UndefVar>) {
-    let mut tc = node.walk();
-    let mut ifenv = Vec::<String>::new();
-    ifenv.extend_from_slice(env);
-    for child in node.named_children(&mut tc).skip(from) {
-        // TODO: this allows if statements to have varadec's
-        if (child.kind() == "assignment_expression") || (child.kind() == "variable_declaration") {
-           if let Some(lhs) = child.named_child(0) {
-               if lhs.kind() == "identifier"{
-                   ifenv.push(node_value(&lhs, src));
-               }
-               if lhs.kind() == "tuple_expression"{
-                   let mut tc = lhs.walk();
-                   for param in lhs.named_children(&mut tc) {
-                       ifenv.push(node_value(&param, src));
-                   }
-               }
-           }
-            if let Some(rhs) = child.named_child(1) {
-                result.extend(eval(&rhs, src, &ifenv.clone()));
-           }
-       }
-        else {
-           result.extend(eval(&child, src, &ifenv.clone()));
-       }
+fn mut_env(node: &Node, src: &String, mut newenv: Vec<String>) -> Vec<String> {
+    match node.kind() {
+        "assignment_expression" | "variable_declaration" => {
+            if let Some(lhs) = node.named_child(0) {
+                if lhs.kind() == "identifier" {
+                    newenv.push(node_value(&lhs, src));
+                }
+                if lhs.kind() == "tuple_expression" {
+                    let mut tc = lhs.walk();
+                    for param in lhs.named_children(&mut tc) {
+                        newenv.push(node_value(&param, src));
+                    }
+                }
+            }
+            newenv
+        }
+        _ => newenv,
     }
 }
-fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
+fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     match node.kind() {
         "source_file" | "ternary_expression" | "tuple_expression" => {
@@ -85,26 +86,18 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
                 result.extend(eval(&child, src, env));
             }
         }
-        "assignment_expression" => {
-            if let Some(rnode) = node.named_child(1) {
-                result.extend(eval(&rnode, src, env));
-            }
-        }
         "return_statement" => {
-            print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
                     if let Some(failed) = analyse(&rnode, src, env) {
                         result.push(failed);
                     }
-
                 } else {
                     result.extend(eval(&rnode, src, env));
                 }
             }
         }
         "subscript_expression" => {
-            print_node(node, src);
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
                     if let Some(failed) = analyse(&rnode, src, env) {
@@ -117,18 +110,29 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
         }
         "parenthesized_expression" => {
             if let Some(rnode) = node.named_child(0) {
-               result.extend(eval(&rnode, src, env));
+                result.extend(eval(&rnode, src, env));
             }
         }
         "let_statement" | "if_statement" => {
-            eval_expression_body(node, src, env, 0, &mut result)
+            let mut tc = node.walk();
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            for child in node.named_children(&mut tc) {
+                newenv = mut_env(&child, src, newenv);
+                result.extend(eval(&child, src, &newenv));
+            }
         }
         "number" => (),
-        "identifier" =>  {
+        "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
             }
-        },
+        }
+        "assignment_expression" | "variable_declaration" => {
+            if let Some(rhs) = node.named_child(1) {
+                result.extend(eval(&rhs, src, env))
+            }
+        }
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
@@ -148,12 +152,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
                     result.extend(eval(&secondnode, src, env));
                 }
             }
-        },
+        }
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
     };
-    return result
+    return result;
 }
 
 fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
@@ -163,7 +167,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
 
-    return eval(&root_node, &String::from(src), &env)
+    return eval(&root_node, &String::from(src), &env);
 }
 
 fn main() {
