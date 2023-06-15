@@ -14,15 +14,9 @@ struct UndefVar {
 fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
-    println!("Child count: {}", node.named_child_count());
     let mut tc = node.walk();
     for (id, child) in node.named_children(&mut tc).enumerate() {
-        println!("Child({}): Kind => {}", id, child.kind().yellow());
-        println!(
-            "Child({}): value => {}",
-            id,
-            node_value(&child, src).yellow()
-        );
+        println!("Child({}): {}::{}", id, node_value(&child, src).yellow(), child.kind().yellow());
     }
 }
 
@@ -172,11 +166,12 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     if x
-        y = 10
-        z = (1, 2,)
-        (i, j) = (1,2,)
-     end
+     let x, y=1
+           for i in 1:5
+               (i == 4) && (x = i; break)
+           end
+           x
+       end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
