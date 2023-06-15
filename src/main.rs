@@ -113,7 +113,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "let_statement" | "if_statement" | "for_statement" => {
+        "let_statement" | "if_statement" | "for_statement" | "while_statement"=> {
             let mut tc = node.walk();
             let mut newenv = Vec::<String>::new();
             newenv.extend_from_slice(env);
@@ -173,9 +173,11 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     let x
-        x
-     end
+        while k < 10
+           j = 0
+           j
+           m
+        end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
