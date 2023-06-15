@@ -54,8 +54,7 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
     let mut ifenv = Vec::<String>::new();
     ifenv.extend_from_slice(env);
     for child in node.named_children(&mut tc).skip(from) {
-       print_node(&child, src);
-       if child.kind() == "assignment_expression" {
+        if (child.kind() == "assignment_expression") || (child.kind() == "variable_declaration") {
            if let Some(lhs) = child.named_child(0) {
                if lhs.kind() == "identifier"{
                    ifenv.push(node_value(&lhs, src));
@@ -67,11 +66,11 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
                    }
                }
            }
-           if let Some(_) = child.named_child(1) {
-                result.extend(eval(&child, src, &ifenv.clone()));
+            if let Some(rhs) = child.named_child(1) {
+                result.extend(eval(&rhs, src, &ifenv.clone()));
            }
        }
-       else {
+        else {
            result.extend(eval(&child, src, &ifenv.clone()));
        }
     }
@@ -120,6 +119,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
                result.extend(eval(&rnode, src, env));
             }
         }
+        "let_statement" => {
+            eval_expression_body(node, src, env, 0, &mut result)
+        }
         "number" => (),
         "identifier" =>  {
             if let Some(failed) = analyse(&node, src, env) {
@@ -167,10 +169,9 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 fn main() {
     let source_code = r#"
      let x, y=1
-           for i in 1:5
-               (i == 4) && (x = i; break)
-           end
            x
+           y
+           z
        end
      "#;
     let env = Vec::<String>::new();
