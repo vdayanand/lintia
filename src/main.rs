@@ -54,6 +54,7 @@ fn eval_expression_body(node: &Node, src: &String, env: &Vec<String>, from: usiz
     let mut ifenv = Vec::<String>::new();
     ifenv.extend_from_slice(env);
     for child in node.named_children(&mut tc).skip(from) {
+        // TODO: this allows if statements to have varadec's
         if (child.kind() == "assignment_expression") || (child.kind() == "variable_declaration") {
            if let Some(lhs) = child.named_child(0) {
                if lhs.kind() == "identifier"{
@@ -119,7 +120,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
                result.extend(eval(&rnode, src, env));
             }
         }
-        "let_statement" => {
+        "let_statement" | "if_statement" => {
             eval_expression_body(node, src, env, 0, &mut result)
         }
         "number" => (),
@@ -148,7 +149,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar>{
                 }
             }
         },
-        "if_statement" => eval_expression_body(node, src, env, 0, &mut result),
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
