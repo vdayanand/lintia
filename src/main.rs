@@ -63,7 +63,10 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
     newenv.extend_from_slice(env);
     for child in node.named_children(&mut tc) {
         match child.kind() {
-            "assignment_expression" | "variable_declaration" | "for_binding" => {
+            "assignment_expression"
+            | "variable_declaration"
+            | "for_binding"
+            | "const statement" => {
                 if let Some(lhs) = child.named_child(0) {
                     if lhs.kind() == "identifier" {
                         newenv.push(node_value(&lhs, src));
@@ -73,6 +76,13 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
                         for param in lhs.named_children(&mut tc) {
                             newenv.push(node_value(&param, src));
                         }
+                    }
+                }
+            }
+            "const_statement" => {
+                if let Some(vardec) = child.named_child(0) {
+                    if let Some(lhs) = vardec.named_child(0) {
+                        newenv.push(node_value(&lhs, src))
                     }
                 }
             }
@@ -104,6 +114,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
+        "const_statement" => {
+            if let Some(rnode) = node.named_child(1) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
         "return_statement" => {
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
@@ -131,18 +146,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "source_file"
-        | "let_statement"
-        | "if_statement"
-        | "for_statement"
-        | "while_statement"
+        "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement"
         | "argument_list" => eval_mut_env(node, src, env, &mut result),
 
-        "number"
-        | "comment"
-        | "continxue_statement"
-        | "break_statement"
-        | "quote_expression" => (),
+        "number" | "comment" | "continue_statement" | "break_statement" | "quote_expression"
+        | "string" => (),
 
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
@@ -155,6 +163,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rhs, src, env))
             }
         }
+
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
@@ -195,8 +204,9 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 fn main() {
     let source_code = r#"
       ## comment
+      const x = 111
+      y = m
       for i in 1:100
-         a = :y
       end
      "#;
     let env = Vec::<String>::new();
