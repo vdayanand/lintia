@@ -85,8 +85,15 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     match node.kind() {
-        "ternary_expression" | "tuple_expression" | "call_expression" | "broadcast_call_expression" |
-        "spread_expression" | "array_expression" | "pair_expression" | "range_expression" | "command_string" => {
+        "ternary_expression"
+        | "tuple_expression"
+        | "call_expression"
+        | "broadcast_call_expression"
+        | "spread_expression"
+        | "array_expression"
+        | "pair_expression"
+        | "range_expression"
+        | "command_string" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -94,7 +101,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
         "named_field" => {
             if let Some(rnode) = node.named_child(1) {
-                    result.extend(eval(&rnode, src, env));
+                result.extend(eval(&rnode, src, env));
             }
         }
         "return_statement" => {
