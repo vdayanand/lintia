@@ -57,14 +57,21 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     }
     return None;
 }
-fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>) {
+fn eval_mut_env(
+    node: &Node,
+    src: &String,
+    env: &Vec<String>,
+    result: &mut Vec<UndefVar>,
+    skipval: usize,
+) {
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
-    for child in node.named_children(&mut tc) {
+    for child in node.named_children(&mut tc).skip(skipval) {
         match child.kind() {
             "assignment_expression"
             | "variable_declaration"
+            | "parameter_list"
             | "for_binding"
             | "const statement" => {
                 if let Some(lhs) = child.named_child(0) {
@@ -90,6 +97,15 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
         };
         result.extend(eval(&child, src, &newenv));
     }
+}
+
+fn eval_mut_env_func(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>) {
+    let mut newenv = Vec::<String>::new();
+    newenv.extend_from_slice(env);
+    if let Some(name) = node.named_child(0) {
+        newenv.push(node_value(&name, src))
+    }
+    eval_mut_env(node, src, env, result, 1)
 }
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
@@ -147,7 +163,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement"
-        | "argument_list" => eval_mut_env(node, src, env, &mut result),
+        | "argument_list" => eval_mut_env(node, src, env, &mut result, 0),
 
         "number" | "comment" | "continue_statement" | "break_statement" | "quote_expression"
         | "string" => (),
@@ -158,11 +174,13 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
 
-        "assignment_expression" | "variable_declaration" | "for_binding" => {
+        "assignment_expression" | "variable_declaration" | "for_binding" | "parameter_list" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
             }
         }
+
+        "function_definition" => eval_mut_env_func(node, src, env, &mut result),
 
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
@@ -203,11 +221,9 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-      ## comment
-      const x = 111
-      y = m
-      for i in 1:100
-      end
+     function hello(x)
+        return y
+     end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -286,5 +302,23 @@ mod tests {
         assert_eq!(two.symbol, "x".to_string());
         assert_eq!(two.row, 1);
         assert_eq!(two.column, 11);
+    }
+    #[test]
+    fn test_func() {
+        let source_code = r#"
+         function hello(x)
+            y
+         end
+         "#;
+        let env = vec!["y".to_string()];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 0);
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 2);
+        assert_eq!(one.column, 12);
     }
 }
