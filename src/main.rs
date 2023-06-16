@@ -85,10 +85,16 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     match node.kind() {
-        "ternary_expression" | "tuple_expression" | "call_expression" | "broadcast_call_expression" => {
+        "ternary_expression" | "tuple_expression" | "call_expression" | "broadcast_call_expression" |
+        "spread_expression" | "array_expression" | "pair_expression" | "range_expression" | "command_string" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
+            }
+        }
+        "named_field" => {
+            if let Some(rnode) = node.named_child(1) {
+                    result.extend(eval(&rnode, src, env));
             }
         }
         "return_statement" => {
@@ -120,7 +126,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
         "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement"
         | "argument_list" => eval_mut_env(node, src, env, &mut result),
-        "number" => (),
+        "number" | "comment" | "continue_statement" | "break_statement" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
@@ -165,14 +171,15 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     parser.set_language(language).unwrap();
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
-
     return eval(&root_node, &String::from(src), &env);
 }
 
 fn main() {
     let source_code = r#"
-      x = 1
-      f.(x)
+      ## comment
+      for i in 1:100
+         a = (y= 1, z= 2)
+      end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
