@@ -81,10 +81,11 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
         result.extend(eval(&child, src, &newenv));
     }
 }
+
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     match node.kind() {
-        "source_file" | "ternary_expression" | "tuple_expression" => {
+        "ternary_expression" | "tuple_expression" | "call_expression"=> {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -117,7 +118,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "let_statement" | "if_statement" | "for_statement" | "while_statement"=> eval_mut_env(node, src, env, &mut result),
+        "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement" | "argument_list" => eval_mut_env(node, src, env, &mut result),
         "number" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
@@ -170,11 +171,8 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-        while k < 10
-           j = 0
-           j
-           m
-        end
+      x = 1
+      f(x)
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
