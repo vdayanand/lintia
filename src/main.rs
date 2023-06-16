@@ -131,14 +131,25 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement"
+        "source_file"
+        | "let_statement"
+        | "if_statement"
+        | "for_statement"
+        | "while_statement"
         | "argument_list" => eval_mut_env(node, src, env, &mut result),
-        "number" | "comment" | "continue_statement" | "break_statement" => (),
+
+        "number"
+        | "comment"
+        | "continxue_statement"
+        | "break_statement"
+        | "quote_expression" => (),
+
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
             }
         }
+
         "assignment_expression" | "variable_declaration" | "for_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
@@ -185,7 +196,7 @@ fn main() {
     let source_code = r#"
       ## comment
       for i in 1:100
-         a = (y= 1, z= 2)
+         a = :y
       end
      "#;
     let env = Vec::<String>::new();
