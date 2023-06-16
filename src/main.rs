@@ -227,4 +227,29 @@ mod tests {
         assert_eq!(one.row, 3);
         assert_eq!(one.column, 12);
     }
+    #[test]
+    fn test_callexp() {
+        let source_code = r#"
+         z(x)
+         "#;
+        let env = vec!["x".to_string()];
+        let mut errs = lint(&source_code, &env);
+        let one = errs.remove(0);
+        assert_eq!(errs.len(), 0);
+        assert_eq!(one.symbol, "z".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 9);
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        let one = errs.remove(0);
+        assert_eq!(errs.len(), 1);
+        assert_eq!(one.symbol, "z".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 9);
+        let two = errs.remove(0);
+        assert_eq!(errs.len(), 0);
+        assert_eq!(two.symbol, "x".to_string());
+        assert_eq!(two.row, 1);
+        assert_eq!(two.column, 11);
+    }
 }
