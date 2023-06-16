@@ -57,24 +57,28 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     }
     return None;
 }
-
-fn mut_env(node: &Node, src: &String, mut newenv: Vec<String>) -> Vec<String> {
-    match node.kind() {
-        "assignment_expression" | "variable_declaration" | "for_binding" => {
-            if let Some(lhs) = node.named_child(0) {
-                if lhs.kind() == "identifier" {
-                    newenv.push(node_value(&lhs, src));
-                }
-                if lhs.kind() == "tuple_expression" {
-                    let mut tc = lhs.walk();
-                    for param in lhs.named_children(&mut tc) {
-                        newenv.push(node_value(&param, src));
+fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>){
+    let mut tc = node.walk();
+    let mut newenv = Vec::<String>::new();
+    newenv.extend_from_slice(env);
+    for child in node.named_children(&mut tc){
+        match child.kind() {
+            "assignment_expression" | "variable_declaration" | "for_binding" => {
+                if let Some(lhs) = child.named_child(0) {
+                    if lhs.kind() == "identifier" {
+                        newenv.push(node_value(&lhs, src));
+                    }
+                    if lhs.kind() == "tuple_expression" {
+                        let mut tc = lhs.walk();
+                        for param in lhs.named_children(&mut tc) {
+                            newenv.push(node_value(&param, src));
+                        }
                     }
                 }
             }
-            newenv
-        }
-        _ => newenv,
+            _ => ()
+        };
+        result.extend(eval(&child, src, &newenv));
     }
 }
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
@@ -113,15 +117,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
-        "let_statement" | "if_statement" | "for_statement" | "while_statement"=> {
-            let mut tc = node.walk();
-            let mut newenv = Vec::<String>::new();
-            newenv.extend_from_slice(env);
-            for child in node.named_children(&mut tc) {
-                newenv = mut_env(&child, src, newenv);
-                result.extend(eval(&child, src, &newenv));
-            }
-        }
+        "let_statement" | "if_statement" | "for_statement" | "while_statement"=> eval_mut_env(node, src, env, &mut result),
         "number" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
@@ -157,9 +153,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             print_node(node, src);
             println!("Unimplemented kind {}", node.kind());
         }
-    };
-    return result;
+    }
+    return result
 }
+
 
 fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     let mut parser = Parser::new();
