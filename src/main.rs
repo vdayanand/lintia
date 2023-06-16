@@ -221,9 +221,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     function hello(x)
-        return y
-     end
+     f(x, y) = f(x, y-1)+1
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
