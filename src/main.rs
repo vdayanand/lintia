@@ -85,7 +85,7 @@ fn eval_mut_env(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<U
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     match node.kind() {
-        "ternary_expression" | "tuple_expression" | "call_expression" => {
+        "ternary_expression" | "tuple_expression" | "call_expression" | "broadcast_call_expression" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -172,7 +172,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 fn main() {
     let source_code = r#"
       x = 1
-      f(x)
+      f.(x)
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
