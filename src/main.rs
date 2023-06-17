@@ -92,6 +92,19 @@ fn eval_mut_env(
                     newenv.push(node_value(&arg, src));
                 }
             }
+            "import_statement" => {
+                if let Some(child) = child.named_child(0) {
+                    if child.kind() == "identifier" {
+                        newenv.push(node_value(&child, src));
+                    }
+                    if child.kind() == "selected_import" {
+                        let mut tc = child.walk();
+                        for arg in child.named_children(&mut tc).skip(1){
+                            newenv.push(node_value(&arg, src));
+                        }
+                    }
+                }
+            }
             "const_statement" => {
                 if let Some(vardec) = child.named_child(0) {
                     if let Some(lhs) = vardec.named_child(0) {
@@ -175,14 +188,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "argument_list" => eval_mut_env(node, src, env, &mut result, 0),
 
         "number" | "comment" | "continue_statement" | "break_statement" | "quote_expression"
-        | "string" => (),
-
+        | "string" | "import_statement" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
             }
         }
-
         "variable_declaration" | "for_binding" | "parameter_list" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
@@ -303,9 +314,18 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-        module X
-           X
-        end
+     module X
+       import A
+       import A: c, v
+       import A: d
+       using A: e
+       c
+       v
+       d
+       e
+       f
+       X
+     end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -441,6 +461,30 @@ mod tests {
         assert_eq!(three.symbol, "zx".to_string());
         assert_eq!(three.row, 9);
         assert_eq!(three.column, 12);
+    }
+    #[test]
+    fn test_module_imp() {
+        let source_code = r#"
+        module X
+          import A
+          import A: c, v
+          import A: d
+          using A: e
+          c
+          v
+          d
+          e
+          f
+          X
+        end
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "f".to_string());
+        assert_eq!(one.row, 10);
+        assert_eq!(one.column, 10);
     }
 
 }
