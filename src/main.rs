@@ -341,6 +341,10 @@ fn main() {
         Y
         Z
      end
+     struct Typee2 <: Animal2
+        Y
+        Z
+     end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -501,5 +505,25 @@ mod tests {
         assert_eq!(one.row, 10);
         assert_eq!(one.column, 10);
     }
-
+    #[test]
+    fn test_struct() {
+        let source_code = r#"
+        abstract type Animal end
+        struct Typee <: Animal
+           Y
+           Z
+        end
+        struct Typee2 <: Animal2
+           Y
+           Z
+        end
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Animal2".to_string());
+        assert_eq!(one.row, 6);
+        assert_eq!(one.column, 25);
+    }
 }
