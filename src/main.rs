@@ -200,11 +200,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&child, src, env));
             }
         }
-        "named_field" => {
-            if let Some(rnode) = node.named_child(1) {
-                result.extend(eval(&rnode, src, env));
-            }
-        }
         "named_argument" => {
             if let Some(rnode) = node.named_child(2) {
                 result.extend(eval(&rnode, src, env));
@@ -260,7 +255,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.push(failed);
             }
         }
-        "typed_expression" => {
+        "typed_expression" | "field_expression" => {
             if let Some(lhs) = node.named_child(0) {
                 if let Some(failed) = analyse(&lhs, src, env) {
                     result.push(failed);
@@ -432,9 +427,19 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 }
 
 fn main() {
+    // support this
+    //let source_code = r#"
+    //   f(l, x::Int, y::Int=1, j=2; k=1, m::Int=2) = x+m+i
+    //"#;
     let source_code = r#"
-       f(y, x::Int, y=1, j=2; k=1, m=2)
-     "#;
+        using JSON
+        function main()
+           resp = JSO.parsefile("x/ds./")
+           if resp["test"]
+              return "Ok"
+           end
+        end
+    "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
     for err in errs {
