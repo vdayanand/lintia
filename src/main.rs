@@ -125,7 +125,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "array_expression"
         | "pair_expression"
         | "range_expression"
-        | "command_string" => {
+        | "command_string" | "macro_argument_list" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -235,6 +235,18 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
+        "macro_expression" => {
+            if let Some(firstnode) = node.named_child(0) {
+                if let Some(name) = firstnode.named_child(0) {
+                    if let Some(failed) = analyse(&name, src, env){
+                        result.push(failed);
+                    }
+                }
+            }
+            if let Some(macro_arg) = node.named_child(1){
+                result.extend(eval(&macro_arg, src, env));
+            }
+        }
         _ => {
             println!("Unimplemented kind {}", node.kind());
         }
@@ -253,7 +265,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     f(x, y) = f(x, y-1)+1
+     @info 1
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
