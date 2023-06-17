@@ -68,10 +68,10 @@ fn scoped_eval(
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
     for child in node.named_children(&mut tc).skip(skipval) {
+        //print_node(&child, src);
         match child.kind() {
             "assignment_expression"
             | "variable_declaration"
-            | "parameter_list"
             | "for_binding"
             | "const statement" => {
                 if let Some(lhs) = child.named_child(0) {
@@ -93,7 +93,7 @@ fn scoped_eval(
                     }
                 }
             }
-            "argument_list" => {
+            "argument_list" | "parameter_list" => {
                 let mut tc = child.walk();
                 for arg in child.named_children(&mut tc) {
                     if arg.kind() == "typed_expression" {
@@ -383,7 +383,9 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-       f(x::Int, y)=1
+       function f(x::Int, y)
+          y
+       end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
