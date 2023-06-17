@@ -276,6 +276,14 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
          }
+        "module_definition" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            if let Some(firstnode) = node.named_child(0) {
+                 newenv.push(node_value(&firstnode, src));
+                 eval_mut_env(&node, src, &newenv, &mut result, 1);
+            }
+         }
         _ => {
             print_node(&node, src);
             println!("Unimplemented kind {}", node.kind());
@@ -295,15 +303,8 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-        try
-            x = 1
-            x = x + 1
-            y
-        catch ex
-            x
-            ex
-        finally
-            zx
+        module X
+           X
         end
      "#;
     let env = Vec::<String>::new();
