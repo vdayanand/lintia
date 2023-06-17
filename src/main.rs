@@ -284,7 +284,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
-        "catch_clause" => {
+        "catch_clause" | "do_clause" => {
             let mut newenv = Vec::<String>::new();
             newenv.extend_from_slice(env);
             if let Some(firstnode) = node.named_child(0) {
@@ -336,14 +336,10 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     abstract type Animal end
-     struct Typee <: Animal
-        Y
-        Z
-     end
-     struct Typee2 <: Animal2
-        Y
-        Z
+     test(x, y) do z
+        z
+        y
+        t
      end
      "#;
     let env = Vec::<String>::new();
@@ -525,5 +521,30 @@ mod tests {
         assert_eq!(one.symbol, "Animal2".to_string());
         assert_eq!(one.row, 6);
         assert_eq!(one.column, 25);
+    }
+    #[test]
+    fn test_doclause() {
+        let source_code = r#"
+        test(x, y) do z
+           z
+           y
+           t
+        end
+        "#;
+        let env = vec!["test".to_string(), "x".to_string()];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 3);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 16);
+        let second = errs.remove(0);
+        assert_eq!(second.symbol, "y".to_string());
+        assert_eq!(second.row, 3);
+        assert_eq!(second.column, 11);
+        let second = errs.remove(0);
+        assert_eq!(second.symbol, "t".to_string());
+        assert_eq!(second.row, 4);
+        assert_eq!(second.column, 11);
     }
 }
