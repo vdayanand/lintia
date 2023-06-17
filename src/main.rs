@@ -208,6 +208,18 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.push(failed);
             }
         }
+        "typed_expression" => {
+            if let Some(lhs) = node.named_child(0) {
+               if let Some(failed) = analyse(&lhs, src, env) {
+                   result.push(failed);
+               }
+            }
+            if let Some(rhs) = node.named_child(1) {
+               if let Some(failed) = analyse(&rhs, src, env) {
+                   result.push(failed);
+               }
+            }
+        }
         "subtype_clause" => {
             if let Some(rhs) = node.named_child(0) {
                 result.extend(eval(&rhs, src, env))
@@ -243,6 +255,16 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                                 panic!("Unimplemented type");
                             }
                         }
+                    }
+                }
+                if lhs.kind() == "typed_expression" {
+                    if let Some(fname) = lhs.named_child(0) {
+                        newenv.push(node_value(&fname, src))
+                    }
+                    if let Some(args) = lhs.named_child(1) {
+                       if let Some(failed) = analyse(&args, src, env) {
+                           result.push(failed);
+                       }
                     }
                 }
             }
@@ -325,22 +347,20 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
-fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar>{
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
-    return eval(&root_node, &String::from(src), &env);
+    let mut result: Vec<UndefVar> = vec![];
+    scoped_eval(&root_node, &String::from(src), &env, &mut result, 0);
+    return result;
 }
 
 fn main() {
     let source_code = r#"
-     test(x, y) do z
-        z
-        y
-        t
-     end
+     x::Animal = 1
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
