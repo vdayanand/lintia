@@ -205,6 +205,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
+        "named_argument" => {
+            if let Some(rnode) = node.named_child(2) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
         "const_statement" => {
             if let Some(rnode) = node.named_child(1) {
                 result.extend(eval(&rnode, src, env));
@@ -428,12 +433,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-       function f(x::Int, y=1, j::Int=2; k=1, m::Int2=2)
-          x
-          y
-          z
-          k
-       end
+       f(y, x::Int, y=1, j=2; k=1, m=2)
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -666,6 +666,31 @@ mod tests {
         assert_eq!(one.symbol, "Int".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 16);
+    }
+    #[test]
+    fn test_call_typed() {
+        let source_code = r#"
+        f(y, x::Int, y=1, j=2; k=1, m=2)
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 4);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "f".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 8);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "y".to_string());
+        assert_eq!(two.row, 1);
+        assert_eq!(two.column, 10);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "x".to_string());
+        assert_eq!(three.row, 1);
+        assert_eq!(three.column, 13);
+        let four = errs.remove(0);
+        assert_eq!(four.symbol, "Int".to_string());
+        assert_eq!(four.row, 1);
+        assert_eq!(four.column, 16);
     }
     #[test]
     fn test_func_typed() {
