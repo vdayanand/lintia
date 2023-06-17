@@ -112,6 +112,13 @@ fn scoped_eval(
                     }
                 }
             }
+            "struct_definition" => {
+                if let Some(child) = child.named_child(0) {
+                    if child.kind() == "identifier" {
+                        newenv.push(node_value(&child, src));
+                    }
+                }
+            }
             "const_statement" => {
                 if let Some(vardec) = child.named_child(0) {
                     if let Some(lhs) = vardec.named_child(0) {
@@ -195,10 +202,20 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "argument_list" => scoped_eval(node, src, env, &mut result, 0),
 
         "number" | "comment" | "continue_statement" | "break_statement" | "quote_expression"
-        | "string" | "import_statement" | "abstract_definition" => (),
+            | "string" | "import_statement" | "abstract_definition"  => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
+            }
+        }
+        "subtype_clause" => {
+            if let Some(rhs) = node.named_child(0) {
+                result.extend(eval(&rhs, src, env))
+            }
+        }
+        "struct_definition" => {
+            if let Some(rhs) = node.named_child(1) {
+                result.extend(eval(&rhs, src, env))
             }
         }
         "variable_declaration" | "for_binding" | "parameter_list" => {
@@ -302,7 +319,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
          }
         _ => {
             print_node(&node, src);
-            println!("Unimplemented kind {}", node.kind());
+            panic!("Unimplemented kind {}", node.kind());
         }
     }
     return result;
@@ -320,6 +337,10 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 fn main() {
     let source_code = r#"
      abstract type Animal end
+     struct Typee <: Animal
+        Y
+        Z
+     end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
