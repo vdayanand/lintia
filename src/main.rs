@@ -84,6 +84,13 @@ fn scoped_eval(
                             newenv.push(node_value(&param, src));
                         }
                     }
+                    if lhs.kind() == "typed_expression" {
+                        if let Some(x) = lhs.named_child(0) {
+                            if x.kind() == "identifier" {
+                                newenv.push(node_value(&x, src));
+                            }
+                        }
+                    }
                 }
             }
             "argument_list" => {
@@ -361,6 +368,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar>{
 fn main() {
     let source_code = r#"
      x::Animal = 1
+     x
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -566,5 +574,19 @@ mod tests {
         assert_eq!(second.symbol, "t".to_string());
         assert_eq!(second.row, 4);
         assert_eq!(second.column, 11);
+    }
+    #[test]
+    fn test_typedassign() {
+        let source_code = r#"
+         x::Animal = 1
+         x
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Animal".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 12);
     }
 }
