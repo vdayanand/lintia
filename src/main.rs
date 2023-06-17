@@ -57,7 +57,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     }
     return None;
 }
-fn eval_mut_env(
+fn scoped_eval(
     node: &Node,
     src: &String,
     env: &Vec<String>,
@@ -105,6 +105,13 @@ fn eval_mut_env(
                     }
                 }
             }
+            "abstract_definition" => {
+                if let Some(child) = child.named_child(0) {
+                    if child.kind() == "identifier" {
+                        newenv.push(node_value(&child, src));
+                    }
+                }
+            }
             "const_statement" => {
                 if let Some(vardec) = child.named_child(0) {
                     if let Some(lhs) = vardec.named_child(0) {
@@ -127,7 +134,7 @@ fn eval_mut_env_func(node: &Node, src: &String, env: &Vec<String>, result: &mut 
     if let Some(name) = node.named_child(0) {
         newenv.push(node_value(&name, src))
     }
-    eval_mut_env(node, src, env, result, 1)
+    scoped_eval(node, src, env, result, 1)
 }
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
@@ -185,10 +192,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "source_file" | "let_statement" | "if_statement" | "for_statement" | "while_statement"
-        | "argument_list" => eval_mut_env(node, src, env, &mut result, 0),
+        | "argument_list" => scoped_eval(node, src, env, &mut result, 0),
 
         "number" | "comment" | "continue_statement" | "break_statement" | "quote_expression"
-        | "string" | "import_statement" => (),
+        | "string" | "import_statement" | "abstract_definition" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
@@ -208,7 +215,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                         newenv.push(node_value(&fname, src))
                     }
                     if let Some(args) = lhs.named_child(1) {
-                        eval_mut_env(&lhs, src, env, &mut result, 1);
+                        scoped_eval(&lhs, src, env, &mut result, 1);
                         let mut tc = args.walk();
                         for child in args.named_children(&mut tc) {
                             if child.kind() == "identifier"{
@@ -228,8 +235,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
 
         "function_definition" | "macro_definition" => eval_mut_env_func(node, src, env, &mut result),
-
-
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
@@ -268,22 +273,22 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
                     newenv.push(node_value(&firstnode, src));
-                    eval_mut_env(&node, src, &newenv, &mut result, 1);
+                    scoped_eval(&node, src, &newenv, &mut result, 1);
                 }
                 else {
-                    eval_mut_env(&node, src, env, &mut result, 0);
+                    scoped_eval(&node, src, env, &mut result, 0);
                 }
             }
         }
         "try_statement" => {
-            eval_mut_env(&node, src, env, &mut result, 0);
+            scoped_eval(&node, src, env, &mut result, 0);
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() == "catch_clause" {
                     result.extend(eval(&child, src, env));
                 }
                 if child.kind() == "finally_clause" {
-                    eval_mut_env(&child, src, env, &mut result, 0);
+                    scoped_eval(&child, src, env, &mut result, 0);
                 }
             }
          }
@@ -292,7 +297,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             newenv.extend_from_slice(env);
             if let Some(firstnode) = node.named_child(0) {
                  newenv.push(node_value(&firstnode, src));
-                 eval_mut_env(&node, src, &newenv, &mut result, 1);
+                 scoped_eval(&node, src, &newenv, &mut result, 1);
             }
          }
         _ => {
@@ -314,18 +319,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     module X
-       import A
-       import A: c, v
-       import A: d
-       using A: e
-       c
-       v
-       d
-       e
-       f
-       X
-     end
+     abstract type Animal end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
