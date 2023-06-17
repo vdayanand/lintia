@@ -440,7 +440,7 @@ fn main() {
            end
         end
     "#;
-    let env = Vec::<String>::new();
+    let env = vec!["nothing".to_string()];
     let errs = lint(source_code, &env);
     for err in errs {
         println!(
