@@ -86,6 +86,12 @@ fn eval_mut_env(
                     }
                 }
             }
+            "argument_list" => {
+                let mut tc = child.walk();
+                for arg in child.named_children(&mut tc){
+                    newenv.push(node_value(&arg, src));
+                }
+            }
             "const_statement" => {
                 if let Some(vardec) = child.named_child(0) {
                     if let Some(lhs) = vardec.named_child(0) {
@@ -174,9 +180,36 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
 
-        "assignment_expression" | "variable_declaration" | "for_binding" | "parameter_list" => {
+        "variable_declaration" | "for_binding" | "parameter_list" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
+            }
+        }
+        "assignment_expression" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            if let Some(lhs) = node.named_child(0) {
+                if lhs.kind() == "call_expression" {
+                    if let Some(fname) = lhs.named_child(0) {
+                        newenv.push(node_value(&fname, src))
+                    }
+                    if let Some(args) = lhs.named_child(1) {
+                        eval_mut_env(&lhs, src, env, &mut result, 1);
+                        let mut tc = args.walk();
+                        for child in args.named_children(&mut tc) {
+                            if child.kind() == "identifier"{
+                                newenv.push(node_value(&child, src))
+                            }
+                            else {
+                                print_node(&child, src);
+                                panic!("Unimplemented type");
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(rhs) = node.named_child(1) {
+                result.extend(eval(&rhs, src, &newenv));
             }
         }
 
@@ -203,7 +236,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         _ => {
-            print_node(node, src);
             println!("Unimplemented kind {}", node.kind());
         }
     }
@@ -309,7 +341,7 @@ mod tests {
          end
          "#;
         let env = vec!["y".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
         let mut errs = lint(&source_code, &env);
@@ -318,5 +350,14 @@ mod tests {
         assert_eq!(one.symbol, "y".to_string());
         assert_eq!(one.row, 2);
         assert_eq!(one.column, 12);
+    }
+    #[test]
+    fn test_oneline_func() {
+        let source_code = r#"
+        f(x, y) = f(x, y-1)+1
+        "#;
+        let env: Vec<String> = vec![];
+        let errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 0);
     }
 }
