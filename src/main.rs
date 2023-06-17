@@ -99,6 +99,9 @@ fn eval_mut_env(
                     }
                 }
             }
+            "catch_clause" => {
+                break
+            }
             _ => (),
         };
         result.extend(eval(&child, src, &newenv));
@@ -213,7 +216,8 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
 
-        "function_definition" => eval_mut_env_func(node, src, env, &mut result),
+        "function_definition" | "macro_definition" => eval_mut_env_func(node, src, env, &mut result),
+
 
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
@@ -247,7 +251,33 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
+        "catch_clause" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            if let Some(firstnode) = node.named_child(0) {
+                if firstnode.kind() == "identifier" {
+                    newenv.push(node_value(&firstnode, src));
+                    eval_mut_env(&node, src, &newenv, &mut result, 1);
+                }
+                else {
+                    eval_mut_env(&node, src, env, &mut result, 0);
+                }
+            }
+        }
+        "try_statement" => {
+            eval_mut_env(&node, src, env, &mut result, 0);
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() == "catch_clause" {
+                    result.extend(eval(&child, src, env));
+                }
+                if child.kind() == "finally_clause" {
+                    eval_mut_env(&child, src, env, &mut result, 0);
+                }
+            }
+         }
         _ => {
+            print_node(&node, src);
             println!("Unimplemented kind {}", node.kind());
         }
     }
@@ -265,7 +295,16 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 
 fn main() {
     let source_code = r#"
-     @info 1
+        try
+            x = 1
+            x = x + 1
+            y
+        catch ex
+            x
+            ex
+        finally
+            zx
+        end
      "#;
     let env = Vec::<String>::new();
     let errs = lint(source_code, &env);
@@ -372,4 +411,35 @@ mod tests {
         let errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 0);
     }
+    #[test]
+    fn test_try() {
+        let source_code = r#"
+        try
+            x = 1
+            x = x + 1
+            y
+        catch ex
+            x
+            ex
+        finally
+            zx
+        end
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 3);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 4);
+        assert_eq!(one.column, 12);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "x".to_string());
+        assert_eq!(two.row, 6);
+        assert_eq!(two.column, 12);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "zx".to_string());
+        assert_eq!(three.row, 9);
+        assert_eq!(three.column, 12);
+    }
+
 }
