@@ -205,6 +205,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rnode, src, env));
             }
         }
+        "unary_expression" => {
+            if let Some(rnode) = node.named_child(0) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
         "const_statement" => {
             if let Some(rnode) = node.named_child(1) {
                 result.extend(eval(&rnode, src, env));
@@ -244,6 +249,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
 
         "number"
         | "comment"
+        | "triple_string"
         | "continue_statement"
         | "break_statement"
         | "quote_expression"
