@@ -259,6 +259,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
         "subscript_expression" => {
             if let Some(rnode) = node.named_child(0) {
+
                 if rnode.kind() == "identifier" {
                     if let Some(failed) = analyse(&rnode, src, env) {
                         result.push(failed);
@@ -375,6 +376,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                         }
                     }
                 }
+                if lhs.kind() == "subscript_expression" {
+                    result.extend(eval(&lhs, src, &newenv));
+                }
             }
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, &newenv));
@@ -486,7 +490,7 @@ fn load_env(file: &str) -> Vec<String>{
 fn main() {
     // support this
     let source_code = r#"
-    @info 1
+       RG[]["ds"] = "d"
     "#;
     let env = load_env("/Users/vdayanand/rs/lintia/src/pkgs/base.toml");
     let errs = lint(source_code, &env);
@@ -604,6 +608,19 @@ mod tests {
         let env: Vec<String> = vec![];
         let errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 0);
+    }
+    #[test]
+    fn test_assign_subscript() {
+        let source_code = r#"
+           RG[]["ds"] = "d"
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "RG".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 11);
     }
     #[test]
     fn test_try() {
