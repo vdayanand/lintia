@@ -1,8 +1,7 @@
 use colored::Colorize;
-use tree_sitter::{Language, Node, Parser};
 use std::fs;
 use toml::Value;
-
+use tree_sitter::{Language, Node, Parser};
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -186,20 +185,16 @@ fn scoped_eval(
                 result.extend(eval(&child, src, &env));
                 continue;
             }
+            "function_definition" | "macro_definition" => {
+                if let Some(name) = child.named_child(0) {
+                    newenv.push(node_value(&name, src))
+                }
+            }
             "catch_clause" => break,
             _ => (),
         };
         result.extend(eval(&child, src, &newenv));
     }
-}
-
-fn eval_mut_env_func(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>) {
-    let mut newenv = Vec::<String>::new();
-    newenv.extend_from_slice(env);
-    if let Some(name) = node.named_child(0) {
-        newenv.push(node_value(&name, src))
-    }
-    scoped_eval(node, src, env, result, 1)
 }
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
@@ -259,7 +254,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
         "subscript_expression" => {
             if let Some(rnode) = node.named_child(0) {
-
                 if rnode.kind() == "identifier" {
                     if let Some(failed) = analyse(&rnode, src, env) {
                         result.push(failed);
@@ -385,9 +379,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
 
-        "function_definition" | "macro_definition" => {
-            eval_mut_env_func(node, src, env, &mut result)
-        }
+        "function_definition" | "macro_definition" => scoped_eval(node, src, env, &mut result, 1),
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
@@ -471,12 +463,12 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
-fn load_env(file: &str) -> Vec<String>{
+fn load_env(file: &str) -> Vec<String> {
     let toml_str = fs::read_to_string(file).expect("Failed to read file");
     let parsed_toml: Value = toml::from_str(&toml_str).expect("Failed to parse TOML");
     if let Some(envs) = parsed_toml.get("envs") {
         if let Some(envs_array) = envs.as_array() {
-           let envs_vec: Vec<String> = envs_array
+            let envs_vec: Vec<String> = envs_array
                 .iter()
                 .filter_map(|env_value| env_value.as_str().map(String::from))
                 .collect();
@@ -486,14 +478,15 @@ fn load_env(file: &str) -> Vec<String>{
     return Vec::<String>::new();
 }
 
+fn load_jl_file(file: &str) -> String {
+    let jl_str = fs::read_to_string(file).expect("Failed to read file");
+    return jl_str;
+}
 
 fn main() {
-    // support this
-    let source_code = r#"
-       RG[]["ds"] = "d"
-    "#;
-    let env = load_env("/Users/vdayanand/rs/lintia/src/pkgs/base.toml");
-    let errs = lint(source_code, &env);
+    let src = load_jl_file("test.jl");
+    let env = load_env("src/pkgs/base.toml");
+    let errs = lint(&src, &env);
     for err in errs {
         println!(
             "Undefined symbol {} found at {}:{} ",
