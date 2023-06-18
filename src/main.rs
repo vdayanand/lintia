@@ -194,10 +194,20 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "pair_expression"
         | "range_expression"
         | "command_string"
-        | "macro_argument_list" => {
+        | "macro_argument_list" | "type_argument_list"=> {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
-                result.extend(eval(&child, src, env));
+                if child.kind() != "ERROR" {
+                    result.extend(eval(&child, src, env));
+                }
+            }
+        }
+        "parameterized_identifier" => {
+            if let Some(rnode) = node.named_child(0) {
+                result.extend(eval(&rnode, src, env));
+            }
+            if let Some(rnode) = node.named_child(1) {
+                result.extend(eval(&rnode, src, env));
             }
         }
         "named_argument" => {
@@ -268,8 +278,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
             if let Some(rhs) = node.named_child(1) {
-                if let Some(failed) = analyse(&rhs, src, env) {
-                    result.push(failed);
+                if rhs.kind() == "identifier" {
+                    if let Some(failed) = analyse(&rhs, src, env) {
+                        result.push(failed);
+                    }
+                }else {
+                    result.extend(eval(&rhs, src, env))
                 }
             }
         }
@@ -301,7 +315,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "variable_declaration" | "for_binding" => {
-            print_node(&node, src);
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
             }
@@ -438,12 +451,9 @@ fn main() {
     //   f(l, x::Int, y::Int=1, j=2; k=1, m::Int=2) = x+m+i
     //"#;
     let source_code = r#"
-        using JSON
-        function main()
-           resp = JSO.parsefile("x/ds./")
-           if resp["test"]
-              return "Ok"
-           end
+        function main(x::Vector{<:Unit})
+            y::Vector{Unit2}
+            k::Vector{<:AbstractString, Int}
         end
     "#;
     let env = vec!["nothing".to_string()];
@@ -733,4 +743,32 @@ mod tests {
         assert_eq!(four.row, 4);
         assert_eq!(four.column, 14);
     }
+    #[test]
+    fn test_parameterized_ids() {
+        let source_code = r#"
+        function main(x::Vector{<:Unit})
+            y::Vector{Unit2}
+            k::Vector{<:AbstractString, Int}
+        end
+        "#;
+        let env: Vec<String> = vec!["y".to_string(), "Vector".to_string(), "Int".to_string()];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 4);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Unit".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 34);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "Unit2".to_string());
+        assert_eq!(two.row, 2);
+        assert_eq!(two.column, 22);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "k".to_string());
+        assert_eq!(three.row, 3);
+        assert_eq!(three.column, 12);
+        let four = errs.remove(0);
+        assert_eq!(four.symbol, "AbstractString".to_string());
+        assert_eq!(four.row, 3);
+        assert_eq!(four.column, 24);
+  }
 }
