@@ -187,7 +187,13 @@ fn scoped_eval(
             }
             "function_definition" | "macro_definition" => {
                 if let Some(name) = child.named_child(0) {
-                    newenv.push(node_value(&name, src))
+                    if let Some(dot) = child.named_child(1) {
+                        if dot.kind() == "ERROR" {
+                            newenv.push(node_value(&dot, src))
+                        } else {
+                            newenv.push(node_value(&name, src))
+                        }
+                    }
                 }
             }
             "catch_clause" => break,
@@ -283,7 +289,8 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "quote_expression"
         | "string"
         | "import_statement"
-        | "abstract_definition" => (),
+        | "abstract_definition"
+        | "export_statement" => (),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
@@ -379,7 +386,17 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
 
-        "function_definition" | "macro_definition" => scoped_eval(node, src, env, &mut result, 1),
+        "function_definition" | "macro_definition" => {
+            if let Some(_) = node.named_child(0) {
+                if let Some(dot) = node.named_child(1) {
+                    if dot.kind() == "ERROR" {
+                        scoped_eval(node, src, env, &mut result, 2);
+                    } else {
+                        scoped_eval(node, src, env, &mut result, 1);
+                    }
+                }
+            }
+        }
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
