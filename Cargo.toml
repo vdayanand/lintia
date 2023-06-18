@@ -9,4 +9,5 @@ cc="*"
 
 [dependencies]
 colored = "2.0.0"
+toml = "0.7.4"
 tree-sitter = "0.20.10"

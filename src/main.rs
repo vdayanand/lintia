@@ -1,5 +1,8 @@
 use colored::Colorize;
 use tree_sitter::{Language, Node, Parser};
+use std::fs;
+use toml::Value;
+
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -42,21 +45,34 @@ fn node_value(node: &Node, src: &String) -> String {
 }
 
 fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
-    if let Ok(val) = node.utf8_text(src.as_bytes()) {
-        let sym = val.to_string();
-        if !env.contains(&sym.to_string()) {
-            let r = row(&node);
-            let c = col(&node);
-            return Some(UndefVar {
-                symbol: sym,
-                row: r,
-                column: c,
-            });
-        }
-        return None;
+    let sym = node_value(&node, src);
+    if !env.contains(&sym) {
+        let r = row(&node);
+        let c = col(&node);
+        return Some(UndefVar {
+            symbol: sym,
+            row: r,
+            column: c,
+        });
     }
     return None;
 }
+
+fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
+    let value = node_value(node, src);
+    let sym = format!("@{}", value);
+    if !env.contains(&sym.to_string()) {
+        let r = row(&node);
+        let c = col(&node);
+        return Some(UndefVar {
+            symbol: sym,
+            row: r,
+            column: c,
+        });
+    }
+    return None;
+}
+
 fn scoped_eval(
     node: &Node,
     src: &String,
@@ -391,7 +407,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         "macro_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if let Some(name) = firstnode.named_child(0) {
-                    if let Some(failed) = analyse(&name, src, env) {
+                    if let Some(failed) = macro_analyse(&name, src, env) {
                         result.push(failed);
                     }
                 }
@@ -451,27 +467,28 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
+fn load_env(file: &str) -> Vec<String>{
+    let toml_str = fs::read_to_string(file).expect("Failed to read file");
+    let parsed_toml: Value = toml::from_str(&toml_str).expect("Failed to parse TOML");
+    if let Some(envs) = parsed_toml.get("envs") {
+        if let Some(envs_array) = envs.as_array() {
+           let envs_vec: Vec<String> = envs_array
+                .iter()
+                .filter_map(|env_value| env_value.as_str().map(String::from))
+                .collect();
+            return envs_vec;
+        }
+    }
+    return Vec::<String>::new();
+}
+
+
 fn main() {
     // support this
     let source_code = r#"
-         if x
-            y = 10
-            x = z + 1
-            (i, j) = (1, 2)
-            x = x + 10
-            m
-         elseif y
-              y
-         else
-           x
-         end
-
+    @info 1
     "#;
-    let env = vec![
-        "nothing".to_string(),
-        "true".to_string(),
-        "false".to_string(),
-    ];
+    let env = load_env("/Users/vdayanand/rs/lintia/src/pkgs/base.toml");
     let errs = lint(source_code, &env);
     for err in errs {
         println!(
