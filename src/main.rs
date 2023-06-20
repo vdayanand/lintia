@@ -72,7 +72,13 @@ fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVa
     return None;
 }
 
-fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>, skip: usize) {
+fn scoped_eval(
+    node: &Node,
+    src: &String,
+    env: &Vec<String>,
+    result: &mut Vec<UndefVar>,
+    skip: usize,
+) {
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
@@ -82,6 +88,11 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
                 newenv.push(node_value(&fname, src));
             }
         }
+        if child.kind() == "elseif_clause" || child.kind() == "else_clause" {
+            result.extend(eval(&child, src, &env));
+            continue;
+        }
+
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
             for param in child.named_children(&mut tc) {
@@ -180,6 +191,27 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
         if child.kind() == "catch_clause" {
             break;
         }
+
+        if child.kind() == "for_binding" || child.kind() == "const statement" {
+            if let Some(lhs) = child.named_child(0) {
+                if lhs.kind() == "identifier" {
+                    newenv.push(node_value(&lhs, src));
+                }
+                if lhs.kind() == "tuple_expression" {
+                    let mut tc = lhs.walk();
+                    for param in lhs.named_children(&mut tc) {
+                        newenv.push(node_value(&param, src));
+                    }
+                }
+                if lhs.kind() == "typed_expression" {
+                    if let Some(x) = lhs.named_child(0) {
+                        if x.kind() == "identifier" {
+                            newenv.push(node_value(&x, src));
+                        }
+                    }
+                }
+            }
+        }
         result.extend(eval(&child, src, &newenv));
     }
 }
@@ -207,6 +239,34 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 if child.kind() == "finally_clause" {
                     scoped_eval(&child, src, env, &mut result, 0);
                 }
+            }
+        }
+        "ternary_expression"
+        | "tuple_expression"
+        | "call_expression"
+        | "broadcast_call_expression"
+        | "spread_expression"
+        | "array_expression"
+        | "pair_expression"
+        | "range_expression"
+        | "command_string"
+        | "macro_argument_list"
+        | "type_argument_list" => {
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() != "ERROR" {
+                    result.extend(eval(&child, src, env));
+                }
+            }
+        }
+        "unary_expression" => {
+            if let Some(rnode) = node.named_child(0) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
+        "const_statement" => {
+            if let Some(rnode) = node.named_child(1) {
+                result.extend(eval(&rnode, src, env));
             }
         }
 
@@ -257,7 +317,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-        "catch_clause"  => {
+        "catch_clause" => {
             let mut newenv = Vec::<String>::new();
             newenv.extend_from_slice(env);
             if let Some(firstnode) = node.named_child(0) {
@@ -303,6 +363,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&typenode, src, &env));
             }
         }
+        "elseif_clause" => scoped_eval(&node, src, env, &mut result, 0),
+        "else_clause" => scoped_eval(&node, src, env, &mut result, 0),
+
+        "if_statement" => scoped_eval(&node, src, env, &mut result, 0),
         _ => {
             print_node(&node, src);
             panic!("Unimplemented kind {}", node.kind());
@@ -359,7 +423,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /*
     #[test]
     fn test_if() {
         let source_code = r#"
@@ -461,7 +524,7 @@ mod tests {
         let env: Vec<String> = vec![];
         let errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 0);
-    }*/
+    }
     #[test]
     fn test_assign_subscript() {
         let source_code = r#"
