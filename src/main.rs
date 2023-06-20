@@ -56,7 +56,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     }
     return None;
 }
-
+/*
 fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     let value = node_value(node, src);
     let sym = format!("@{}", value);
@@ -71,7 +71,7 @@ fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVa
     }
     return None;
 }
-
+*/
 fn scoped_eval(
     node: &Node,
     src: &String,
@@ -82,7 +82,7 @@ fn scoped_eval(
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
-    for child in node.named_children(&mut tc) {
+    for child in node.named_children(&mut tc).skip(skip) {
         if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
             if let Some(fname) = child.named_child(0) {
                 newenv.push(node_value(&fname, src));
@@ -218,7 +218,6 @@ fn scoped_eval(
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
-    //    print_node(&node, src);
     match node.kind() {
         "string_literal" | "integer_literal" | "abstract_definition" | "import_statement" => (),
         "function_definition" | "let_statement" | "short_function_definition" => {
@@ -243,7 +242,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
         "ternary_expression"
         | "tuple_expression"
-        | "call_expression"
         | "broadcast_call_expression"
         | "spread_expression"
         | "array_expression"
@@ -283,6 +281,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             assert!(node.named_child_count() == 3);
             if let Some(rhs) = node.named_child(0) {
                 if rhs.kind() == "typed_expression" {
+                    result.extend(eval(&rhs, src, &env));
+                }
+                if rhs.kind() == "index_expression" {
                     result.extend(eval(&rhs, src, &env));
                 }
             }
