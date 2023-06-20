@@ -222,13 +222,15 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     match node.kind() {
         "string_literal"
         | "boolean_literal"
+        | "character_literal"
         | "integer_literal"
         | "abstract_definition"
         | "import_statement"
         | "continue_statement"
         | "line_comment"
         | "command_literal"
-        | "quote_expression" => (),
+        | "quote_expression"
+        | "export_statement" => (),
         "function_definition"
         | "macro_definition"
         | "let_statement"
@@ -252,7 +254,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
-        "parenthesized_expression" => {
+        "parenthesized_expression" | "prefixed_string_literal" | "global_declaration" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(&rnode, src, env));
             }
@@ -312,7 +314,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-        "const_statement" => {
+        "const_declaration" => {
             if let Some(rnode) = node.named_child(1) {
                 result.extend(eval(&rnode, src, env));
             }
@@ -327,7 +329,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.push(failed);
             }
         }
-        "assignment" => {
+        "assignment" | "compound_assignment_expression" => {
             assert!(node.named_child_count() == 3);
             if let Some(rhs) = node.named_child(0) {
                 if rhs.kind() == "typed_expression" {
