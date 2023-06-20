@@ -154,6 +154,32 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
                 }
             }
         }
+        if child.kind() == "abstract_definition"
+            || child.kind() == "struct_definition"
+            || child.kind() == "module_definition"
+        {
+            if let Some(child) = child.named_child(0) {
+                if child.kind() == "identifier" {
+                    newenv.push(node_value(&child, src));
+                }
+            }
+        }
+        if child.kind() == "import_statement" {
+            if let Some(child) = child.named_child(0) {
+                if child.kind() == "identifier" {
+                    newenv.push(node_value(&child, src));
+                }
+                if child.kind() == "selected_import" {
+                    let mut tc = child.walk();
+                    for arg in child.named_children(&mut tc).skip(1) {
+                        newenv.push(node_value(&arg, src));
+                    }
+                }
+            }
+        }
+        if child.kind() == "catch_clause" {
+            break;
+        }
         result.extend(eval(&child, src, &newenv));
     }
 }
@@ -162,10 +188,32 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     //    print_node(&node, src);
     match node.kind() {
-        "string_literal" | "integer_literal" => (),
+        "string_literal" | "integer_literal" | "abstract_definition" | "import_statement" => (),
         "function_definition" | "let_statement" | "short_function_definition" => {
             scoped_eval(node, src, env, &mut result)
         }
+        "struct_definition" => {
+            if let Some(rhs) = node.named_child(1) {
+                result.extend(eval(&rhs, src, env))
+            }
+        }
+        "try_statement" => {
+            scoped_eval(&node, src, env, &mut result);
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() == "catch_clause" {
+                    result.extend(eval(&child, src, env));
+                }
+                if child.kind() == "finally_clause" {
+                    scoped_eval(&child, src, env, &mut result);
+                }
+            }
+        }
+
+        "module_definition" => {
+            scoped_eval(&node, src, &env, &mut result);
+        }
+
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
@@ -189,7 +237,27 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&child, src, &env));
             }
         }
-        "parameter_list" => scoped_eval(node, src, env, &mut result),
+        "binary_expression" => {
+            if let Some(firstnode) = node.named_child(0) {
+                if firstnode.kind() == "identifier" {
+                    if let Some(failed) = analyse(&firstnode, src, env) {
+                        result.push(failed);
+                    }
+                } else {
+                    result.extend(eval(&firstnode, src, env));
+                }
+            }
+            if let Some(secondnode) = node.named_child(2) {
+                if secondnode.kind() == "identifier" {
+                    if let Some(failed) = analyse(&secondnode, src, env) {
+                        result.push(failed);
+                    }
+                } else {
+                    result.extend(eval(&secondnode, src, env));
+                }
+            }
+        }
+        "parameter_list" | "do_clause" | "catch_clause" => scoped_eval(node, src, env, &mut result),
         "typed_parameter" | "named_argument" => {
             assert!(node.named_child_count() <= 2);
             if let Some(typenode) = node.named_child(1) {
@@ -394,7 +462,7 @@ mod tests {
         assert_eq!(one.symbol, "RG".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 11);
-    }
+    }*/
     #[test]
     fn test_try() {
         let source_code = r#"
@@ -494,7 +562,7 @@ mod tests {
         assert_eq!(second.symbol, "t".to_string());
         assert_eq!(second.row, 4);
         assert_eq!(second.column, 11);
-    }*/
+    }
     #[test]
     fn test_typedassign() {
         let source_code = r#"
