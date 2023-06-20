@@ -82,15 +82,33 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
                 newenv.push(node_value(&fname, src));
             }
         }
-        if child.kind() == "parameter_list" {
+        if child.kind() == "parameter_list" || child.kind() == "keyword_parameters" {
             let mut tc = child.walk();
             for param in child.named_children(&mut tc) {
                 if let Some(var) = param.named_child(0) {
-                    newenv.push(node_value(&var, src));
+                    if var.kind() == "identifier" {
+                        newenv.push(node_value(&var, src));
+                    } else if var.kind() == "optional_parameter" {
+                        if let Some(lhs) = var.named_child(0) {
+                            if lhs.kind() == "identifier" {
+                                newenv.push(node_value(&lhs, src));
+                            } else if lhs.kind() == "typed_parameter" {
+                                if let Some(typevar) = lhs.named_child(0) {
+                                    newenv.push(node_value(&typevar, src));
+                                }
+                            } else {
+                                print_node(&lhs, src);
+                                panic!("Unxpected type");
+                            }
+                        }
+                    }
                 }
             }
         }
-        if child.kind() == "assignment" || child.kind() == "typed_parameter" {
+        if child.kind() == "assignment"
+            || child.kind() == "typed_parameter"
+            || child.kind() == "optional_parameter"
+        {
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
@@ -110,8 +128,9 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
+    //    print_node(&node, src);
     match node.kind() {
-        "string_literal" => (),
+        "string_literal" | "integer_literal" => (),
         "function_definition" | "let_statement" => scoped_eval(node, src, env, &mut result),
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
@@ -119,27 +138,32 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "assignment" => {
+            assert!(node.named_child_count() == 2);
             if let Some(rhs) = node.named_child(2) {
                 result.extend(eval(&rhs, src, &env));
             }
         }
         "index_expression" | "vector_expression" | "call_expression" | "field_expression"
-        | "argument_list" => {
+        | "argument_list" | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, &env));
             }
         }
-        "parameter_list" => {
-            let mut tc = node.walk();
-            for param in node.named_children(&mut tc) {
-                if let Some(key) = param.named_child(1) {
-                    result.extend(eval(&key, src, &env));
-                }
+        "parameter_list" => scoped_eval(node, src, env, &mut result),
+        "typed_parameter" => {
+            assert!(node.named_child_count() <= 2);
+            if let Some(typenode) = node.named_child(1) {
+                result.extend(eval(&typenode, src, &env));
             }
         }
-        "typed_parameter" => {
-            if let Some(typenode) = node.named_child(1) {
+        "optional_parameter" => {
+            assert!(node.named_child_count() <= 2);
+            if let Some(typenode) = node.named_child(0) {
+                if typenode.kind() == "typed_parameter" {
+                    result.extend(eval(&typenode, src, &env))
+                }
+            } else if let Some(typenode) = node.named_child(1) {
                 result.extend(eval(&typenode, src, &env));
             }
         }
@@ -483,7 +507,7 @@ mod tests {
         assert_eq!(four.symbol, "Int".to_string());
         assert_eq!(four.row, 1);
         assert_eq!(four.column, 16);
-    }
+    }*/
     #[test]
     fn test_func_typed() {
         let source_code = r#"
@@ -513,7 +537,7 @@ mod tests {
         assert_eq!(four.symbol, "z".to_string());
         assert_eq!(four.row, 4);
         assert_eq!(four.column, 14);
-    }*/
+    }
     #[test]
     fn test_parameterized_ids() {
         let source_code = r#"
