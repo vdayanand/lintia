@@ -72,7 +72,7 @@ fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVa
     return None;
 }
 
-fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>) {
+fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<UndefVar>, skip: usize) {
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
@@ -190,7 +190,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     match node.kind() {
         "string_literal" | "integer_literal" | "abstract_definition" | "import_statement" => (),
         "function_definition" | "let_statement" | "short_function_definition" => {
-            scoped_eval(node, src, env, &mut result)
+            scoped_eval(node, src, env, &mut result, 0)
         }
         "struct_definition" => {
             if let Some(rhs) = node.named_child(1) {
@@ -198,20 +198,20 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "try_statement" => {
-            scoped_eval(&node, src, env, &mut result);
+            scoped_eval(&node, src, env, &mut result, 0);
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() == "catch_clause" {
                     result.extend(eval(&child, src, env));
                 }
                 if child.kind() == "finally_clause" {
-                    scoped_eval(&child, src, env, &mut result);
+                    scoped_eval(&child, src, env, &mut result, 0);
                 }
             }
         }
 
         "module_definition" => {
-            scoped_eval(&node, src, &env, &mut result);
+            scoped_eval(&node, src, &env, &mut result, 0);
         }
 
         "identifier" => {
@@ -257,7 +257,19 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-        "parameter_list" | "do_clause" | "catch_clause" => scoped_eval(node, src, env, &mut result),
+        "catch_clause"  => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            if let Some(firstnode) = node.named_child(0) {
+                if firstnode.kind() == "identifier" {
+                    newenv.push(node_value(&firstnode, src));
+                    scoped_eval(&node, src, &newenv, &mut result, 1);
+                } else {
+                    scoped_eval(&node, src, env, &mut result, 0);
+                }
+            }
+        }
+        "parameter_list" | "do_clause" => scoped_eval(node, src, env, &mut result, 0),
         "typed_parameter" | "named_argument" => {
             assert!(node.named_child_count() <= 2);
             if let Some(typenode) = node.named_child(1) {
@@ -307,7 +319,7 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     let root_node = tree.root_node();
     let mut result: Vec<UndefVar> = vec![];
     //    print_node(&root_node, &src.to_string());
-    scoped_eval(&root_node, &String::from(src), &env, &mut result);
+    scoped_eval(&root_node, &String::from(src), &env, &mut result, 0);
     return result;
 }
 
@@ -449,7 +461,7 @@ mod tests {
         let env: Vec<String> = vec![];
         let errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 0);
-    }
+    }*/
     #[test]
     fn test_assign_subscript() {
         let source_code = r#"
@@ -462,7 +474,7 @@ mod tests {
         assert_eq!(one.symbol, "RG".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 11);
-    }*/
+    }
     #[test]
     fn test_try() {
         let source_code = r#"
