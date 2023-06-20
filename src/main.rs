@@ -77,34 +77,62 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
     for child in node.named_children(&mut tc) {
-        if child.kind() == "function_definition" {
+        if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
             if let Some(fname) = child.named_child(0) {
                 newenv.push(node_value(&fname, src));
             }
         }
-        if child.kind() == "parameter_list" || child.kind() == "keyword_parameters" {
+        if child.kind() == "parameter_list" {
             let mut tc = child.walk();
             for param in child.named_children(&mut tc) {
-                if let Some(var) = param.named_child(0) {
-                    if var.kind() == "identifier" {
-                        newenv.push(node_value(&var, src));
-                    } else if var.kind() == "optional_parameter" {
-                        if let Some(lhs) = var.named_child(0) {
-                            if lhs.kind() == "identifier" {
-                                newenv.push(node_value(&lhs, src));
-                            } else if lhs.kind() == "typed_parameter" {
-                                if let Some(typevar) = lhs.named_child(0) {
-                                    newenv.push(node_value(&typevar, src));
+                if param.kind() == "identifier" {
+                    newenv.push(node_value(&param, src));
+                } else if param.kind() == "optional_parameter" {
+                    if let Some(lhs) = param.named_child(0) {
+                        if lhs.kind() == "identifier" {
+                            newenv.push(node_value(&lhs, src));
+                        } else if lhs.kind() == "typed_parameter" {
+                            if let Some(typevar) = lhs.named_child(0) {
+                                newenv.push(node_value(&typevar, src));
+                            }
+                        } else {
+                            print_node(&lhs, src);
+                            panic!("Unxpected type");
+                        }
+                    }
+                } else if param.kind() == "keyword_parameters" {
+                    let mut tc = param.walk();
+                    for x in param.named_children(&mut tc) {
+                        if x.kind() == "identifier" {
+                            newenv.push(node_value(&x, src));
+                        } else if x.kind() == "optional_parameter" {
+                            if let Some(lhs) = x.named_child(0) {
+                                if lhs.kind() == "identifier" {
+                                    newenv.push(node_value(&lhs, src));
+                                } else if lhs.kind() == "typed_parameter" {
+                                    if let Some(typevar) = lhs.named_child(0) {
+                                        newenv.push(node_value(&typevar, src));
+                                    }
+                                } else {
+                                    print_node(&lhs, src);
+                                    panic!("Unxpected type");
                                 }
-                            } else {
-                                print_node(&lhs, src);
-                                panic!("Unxpected type");
                             }
                         }
                     }
+                } else if param.kind() == "typed_parameter" {
+                    if let Some(lhs) = param.named_child(0) {
+                        if lhs.kind() == "identifier" {
+                            newenv.push(node_value(&lhs, src));
+                        }
+                    }
+                } else {
+                    print_node(&param, src);
+                    panic!("Howzzz");
                 }
             }
         }
+
         if child.kind() == "assignment"
             || child.kind() == "typed_parameter"
             || child.kind() == "optional_parameter"
@@ -131,7 +159,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     //    print_node(&node, src);
     match node.kind() {
         "string_literal" | "integer_literal" => (),
-        "function_definition" | "let_statement" => scoped_eval(node, src, env, &mut result),
+        "function_definition" | "let_statement" | "short_function_definition" => {
+            scoped_eval(node, src, env, &mut result)
+        }
         "identifier" => {
             if let Some(failed) = analyse(&node, src, env) {
                 result.push(failed);
@@ -151,7 +181,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "parameter_list" => scoped_eval(node, src, env, &mut result),
-        "typed_parameter" => {
+        "typed_parameter" | "named_argument" => {
             assert!(node.named_child_count() <= 2);
             if let Some(typenode) = node.named_child(1) {
                 result.extend(eval(&typenode, src, &env));
@@ -469,7 +499,7 @@ mod tests {
         assert_eq!(one.symbol, "Animal".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 12);
-    }
+    }*/
     #[test]
     fn test_oneline_func_typed() {
         let source_code = r#"
@@ -507,7 +537,7 @@ mod tests {
         assert_eq!(four.symbol, "Int".to_string());
         assert_eq!(four.row, 1);
         assert_eq!(four.column, 16);
-    }*/
+    }
     #[test]
     fn test_func_typed() {
         let source_code = r#"
