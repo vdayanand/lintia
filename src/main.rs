@@ -218,11 +218,46 @@ fn scoped_eval(
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
+    print_node(&node, src);
     match node.kind() {
-        "string_literal" | "integer_literal" | "abstract_definition" | "import_statement" => (),
-        "function_definition" | "let_statement" | "short_function_definition" => {
-            scoped_eval(node, src, env, &mut result, 0)
+        "string_literal"
+        | "boolean_literal"
+        | "integer_literal"
+        | "abstract_definition"
+        | "import_statement"
+        | "continue_statement"
+        | "line_comment"
+        | "command_literal"
+        | "quote_expression" => (),
+        "function_definition"
+        | "macro_definition"
+        | "let_statement"
+        | "for_statement"
+        | "while_statement"
+        | "short_function_definition" => scoped_eval(node, src, env, &mut result, 0),
+        "variable_declaration" | "for_binding" => {
+            if let Some(rhs) = node.named_child(1) {
+                result.extend(eval(&rhs, src, env))
+            }
         }
+        "macrocall_expression" => {
+            if let Some(firstnode) = node.named_child(0) {
+                if let Some(name) = firstnode.named_child(0) {
+                    if let Some(failed) = analyse(&name, src, env) {
+                        result.push(failed);
+                    }
+                }
+            }
+            if let Some(macro_arg) = node.named_child(1) {
+                result.extend(eval(&macro_arg, src, env));
+            }
+        }
+        "parenthesized_expression" => {
+            if let Some(rnode) = node.named_child(0) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
+
         "struct_definition" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
@@ -244,7 +279,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "tuple_expression"
         | "broadcast_call_expression"
         | "spread_expression"
+        | "splat_expression"
         | "array_expression"
+        | "macro_argument_list"
+        | "bare_tuple"
         | "pair_expression"
         | "range_expression"
         | "command_string"
@@ -252,14 +290,26 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "type_argument_list" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
-                if child.kind() != "ERROR" {
-                    result.extend(eval(&child, src, env));
+                result.extend(eval(&child, src, env));
+            }
+        }
+        "return_statement" => {
+            if let Some(rnode) = node.named_child(0) {
+                if rnode.kind() == "identifier" {
+                    if let Some(failed) = analyse(&rnode, src, env) {
+                        result.push(failed);
+                    }
+                } else {
+                    result.extend(eval(&rnode, src, env));
                 }
             }
         }
         "unary_expression" => {
-            if let Some(rnode) = node.named_child(0) {
-                result.extend(eval(&rnode, src, env));
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() != "operator" {
+                    result.extend(eval(&child, src, env));
+                }
             }
         }
         "const_statement" => {
@@ -295,7 +345,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "argument_list" | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
-                result.extend(eval(&child, src, &env));
+                if child.kind() != "operator" {
+                    result.extend(eval(&child, src, &env));
+                }
             }
         }
         "binary_expression" => {
@@ -330,13 +382,31 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
+        "function_expression" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            if let Some(firstnode) = node.named_child(0) {
+                if firstnode.kind() == "identifier" {
+                    newenv.push(node_value(&firstnode, src));
+                    scoped_eval(&node, src, &newenv, &mut result, 1);
+                } else {
+                    scoped_eval(&node, src, env, &mut result, 0);
+                }
+            }
+        }
         "parameter_list" | "do_clause" => scoped_eval(node, src, env, &mut result, 0),
-        "typed_parameter" | "named_argument" => {
+        "typed_parameter" | "named_field" => {
             assert!(node.named_child_count() <= 2);
             if let Some(typenode) = node.named_child(1) {
                 result.extend(eval(&typenode, src, &env));
             }
         }
+        "named_argument" => {
+            if let Some(rnode) = node.named_child(1) {
+                result.extend(eval(&rnode, src, env));
+            }
+        }
+
         "optional_parameter" => {
             assert!(node.named_child_count() <= 2);
             if let Some(typenode) = node.named_child(0) {
