@@ -140,6 +140,10 @@ fn scoped_eval(node: &Node, src: &String, env: &Vec<String>, result: &mut Vec<Un
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
+                } else if lhs.kind() == "typed_expression" {
+                    if let Some(lhstyped) = lhs.named_child(0) {
+                        newenv.push(node_value(&lhstyped, src));
+                    }
                 }
             }
         }
@@ -168,7 +172,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "assignment" => {
-            assert!(node.named_child_count() == 2);
+            assert!(node.named_child_count() == 3);
+            if let Some(rhs) = node.named_child(0) {
+                if rhs.kind() == "typed_expression" {
+                    result.extend(eval(&rhs, src, &env));
+                }
+            }
             if let Some(rhs) = node.named_child(2) {
                 result.extend(eval(&rhs, src, &env));
             }
@@ -485,7 +494,7 @@ mod tests {
         assert_eq!(second.symbol, "t".to_string());
         assert_eq!(second.row, 4);
         assert_eq!(second.column, 11);
-    }
+    }*/
     #[test]
     fn test_typedassign() {
         let source_code = r#"
@@ -499,7 +508,7 @@ mod tests {
         assert_eq!(one.symbol, "Animal".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 12);
-    }*/
+    }
     #[test]
     fn test_oneline_func_typed() {
         let source_code = r#"
