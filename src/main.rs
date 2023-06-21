@@ -182,7 +182,18 @@ fn scoped_eval(
             if let Some(assign) = child.named_child(0) {
                 if assign.kind() == "assignment" {
                     if let Some(var) = assign.named_child(0) {
-                        newenv.push(node_value(&var, src));
+                        if var.kind() == "identifier" {
+                            newenv.push(node_value(&var, src));
+                        } else if var.kind() == "typed_expression" {
+                            if let Some(typevar) = var.named_child(0) {
+                                if typevar.kind() == "identifier" {
+                                    newenv.push(node_value(&typevar, src));
+                                } else {
+                                    print_node(&typevar, src);
+                                    panic!("Unexpected")
+                                }
+                            }
+                        }
                     }
                 } else {
                     print_node(&node, src);
@@ -817,5 +828,31 @@ mod tests {
         assert_eq!(four.symbol, "AbstractString".to_string());
         assert_eq!(four.row, 3);
         assert_eq!(four.column, 24);
+    }
+    #[test]
+    fn test_const_declaration() {
+        let source_code = r#"
+        const x = 1
+        x
+        y
+        const z::Int = 1
+        k
+        z
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 3);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 3);
+        assert_eq!(one.column, 8);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "Int".to_string());
+        assert_eq!(two.row, 4);
+        assert_eq!(two.column, 17);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "k".to_string());
+        assert_eq!(three.row, 5);
+        assert_eq!(three.column, 8);
     }
 }
