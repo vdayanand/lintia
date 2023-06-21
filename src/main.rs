@@ -56,22 +56,7 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     }
     return None;
 }
-/*
-fn macro_analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
-    let value = node_value(node, src);
-    let sym = format!("@{}", value);
-    if !env.contains(&sym.to_string()) {
-        let r = row(&node);
-        let c = col(&node);
-        return Some(UndefVar {
-            symbol: sym,
-            row: r,
-            column: c,
-        });
-    }
-    return None;
-}
-*/
+
 fn scoped_eval(
     node: &Node,
     src: &String,
@@ -188,11 +173,25 @@ fn scoped_eval(
                 }
             }
         }
+
         if child.kind() == "catch_clause" {
             break;
         }
 
-        if child.kind() == "for_binding" || child.kind() == "const statement" {
+        if child.kind() == "const_declaration" {
+            if let Some(assign) = child.named_child(0) {
+                if assign.kind() == "assignment" {
+                    if let Some(var) = assign.named_child(0) {
+                        newenv.push(node_value(&var, src));
+                    }
+                } else {
+                    print_node(&node, src);
+                    panic!("Unexpected!!")
+                }
+            }
+        }
+
+        if child.kind() == "for_binding" {
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
@@ -218,7 +217,6 @@ fn scoped_eval(
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
-    print_node(&node, src);
     match node.kind() {
         "string_literal"
         | "boolean_literal"
@@ -288,7 +286,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "pair_expression"
         | "range_expression"
         | "command_string"
-        | "macro_argument_list"
         | "type_argument_list" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
@@ -315,7 +312,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "const_declaration" => {
-            if let Some(rnode) = node.named_child(1) {
+            if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(&rnode, src, env));
             }
         }
