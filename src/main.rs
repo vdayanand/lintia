@@ -303,7 +303,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "let_statement"
         | "for_statement"
         | "while_statement"
-        | "short_function_definition"| "compound_statement" => scoped_eval(node, src, env, &mut result, 0),
+        | "short_function_definition"| "compound_statement"|"finally_clause" => scoped_eval(node, src, env, &mut result, 0),
         "variable_declaration" | "for_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
