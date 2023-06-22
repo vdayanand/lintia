@@ -43,8 +43,19 @@ fn node_value(node: &Node, src: &String) -> String {
     return "".to_string();
 }
 
-fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
-    let sym = node_value(&node, src);
+fn analyse(node: &Node, src: &String, env: &Vec<String>, idtype: &str) -> Option<UndefVar> {
+    let sym = if idtype == "string_macro" {
+        let mut b = String::from("@");
+        b.push_str(&String::from(node_value(&node, src)));
+        b.push_str(&String::from("_str"));
+        b
+    } else if idtype == "macro" {
+        let mut b = String::from("@");
+        b.push_str(&String::from(node_value(&node, src)));
+        b
+    } else {
+        node_value(&node, src)
+    };
     if !env.contains(&sym) {
         let r = row(&node);
         let c = col(&node);
@@ -86,7 +97,7 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                 }
             }
         }
-        "function_definition" | "short_function_definition" | "macro_definition" => {
+        "function_definition" | "short_function_definition" => {
             if let Some(fname) = node.named_child(0) {
                 if fname.kind() == "identifier" {
                     syms.push(Some(node_value(&fname, src)));
@@ -97,6 +108,13 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                 } else {
                     unex(&fname);
                 }
+            }
+        }
+        "macro_definition" => {
+            if let Some(name) = node.named_child(0) {
+                let mut b = String::from("@");
+                b.push_str(&String::from(node_value(&name, src)));
+                syms.push(Some(b));
             }
         }
         "import_statement" => {
@@ -266,10 +284,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "line_comment"
         | "command_literal"
         | "quote_expression"
+        | "macro_definition"
         | "export_statement" => (),
 
         "function_definition"
-        | "macro_definition"
+
         | "let_statement"
         | "for_statement"
         | "while_statement"
@@ -282,7 +301,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         "macrocall_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if let Some(name) = firstnode.named_child(0) {
-                    if let Some(failed) = analyse(&name, src, env) {
+                    if let Some(failed) = analyse(&name, src, env, "macro") {
                         result.push(failed);
                     }
                 }
@@ -291,12 +310,18 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
-        "parenthesized_expression" | "prefixed_string_literal" | "global_declaration" => {
+        "parenthesized_expression" | "global_declaration" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(&rnode, src, env));
             }
         }
-
+        "prefixed_string_literal" => {
+            if let Some(name) = node.named_child(0) {
+                if let Some(failed) = analyse(&name, src, env, "string_macro") {
+                    result.push(failed);
+                }
+            }
+        }
         "struct_definition" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
@@ -334,7 +359,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         "return_statement" => {
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(&rnode, src, env) {
+                    if let Some(failed) = analyse(&rnode, src, env, "normal") {
                         result.push(failed);
                     }
                 } else {
@@ -361,7 +386,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
 
         "identifier" => {
-            if let Some(failed) = analyse(&node, src, env) {
+            if let Some(failed) = analyse(&node, src, env, "normal") {
                 result.push(failed);
             }
         }
@@ -396,7 +421,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         "binary_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if firstnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(&firstnode, src, env) {
+                    if let Some(failed) = analyse(&firstnode, src, env, "normal") {
                         result.push(failed);
                     }
                 } else {
@@ -405,7 +430,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
             if let Some(secondnode) = node.named_child(2) {
                 if secondnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(&secondnode, src, env) {
+                    if let Some(failed) = analyse(&secondnode, src, env, "normal") {
                         result.push(failed);
                     }
                 } else {
@@ -638,7 +663,6 @@ mod tests {
          "#;
         let env = vec!["y".to_string()];
         let errs = lint(&source_code, &env);
-        println!("{:?}",errs);
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
         let mut errs = lint(&source_code, &env);
@@ -921,5 +945,29 @@ mod tests {
         assert_eq!(one.symbol, "Z".to_string());
         assert_eq!(one.row, 4);
         assert_eq!(one.column, 8);
+    }
+    #[test]
+    fn test_macro_expression() {
+        let source_code = r#"
+        macro x()
+        end
+        macro y_str()
+        end
+        y
+        y"test"
+        x
+        @x 1
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 2);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 5);
+        assert_eq!(one.column, 8);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "x".to_string());
+        assert_eq!(two.row, 7);
+        assert_eq!(two.column, 8);
     }
 }
