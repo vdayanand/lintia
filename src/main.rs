@@ -80,7 +80,13 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                     if let Some(var) = assign.named_child(0) {
                         if var.kind() == "identifier" {
                             syms.push(Some(node_value(&var, src)));
-                        } else if var.kind() == "typed_expression" {
+                        }
+                        else if var.kind() == "bare_tuple" || var.kind() == "tuple_expression" {
+                            let mut tc = var.walk();
+                            for val in var.named_children(&mut tc) {
+                                syms.push(Some(node_value(&val, src)));
+                            }
+                        }                        else if var.kind() == "typed_expression" {
                             if let Some(typevar) = var.named_child(0) {
                                 if typevar.kind() == "identifier" {
                                     syms.push(Some(node_value(&typevar, src)));
@@ -239,6 +245,12 @@ fn scoped_eval(
                 } else if lhs.kind() == "typed_expression" {
                     if let Some(lhstyped) = lhs.named_child(0) {
                         newenv.push(node_value(&lhstyped, src));
+                    }
+                }
+                else if lhs.kind() == "tuple_expression" || lhs.kind() == "bare_tuple" {
+                    let mut tc = lhs.walk();
+                    for val in lhs.named_children(&mut tc) {
+                        newenv.push(node_value(&val, src));
                     }
                 }
             }
@@ -1038,5 +1050,22 @@ mod tests {
         assert_eq!(one.symbol, "g".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 19);
+    }
+    #[test]
+    fn test_tuple_assign() {
+        let source_code = r#"
+        (x, _) = pair()
+        j, _ = pair()
+        x
+        y
+        j
+        "#;
+        let env: Vec<String> = vec!["pair".to_string()];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 4);
+        assert_eq!(one.column, 8);
     }
 }
