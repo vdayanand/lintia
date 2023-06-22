@@ -298,6 +298,7 @@ fn scoped_eval(
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
+//    print_node(&node, src);
     match node.kind() {
         "string_literal"
         | "boolean_literal"
@@ -372,8 +373,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "struct_definition" => {
-            if let Some(rhs) = node.named_child(1) {
-                result.extend(eval(&rhs, src, env))
+            let mut tc = node.walk();
+            for field in node.named_children(&mut tc) {
+                if let Some(name) = field.named_child(1) {
+                    result.extend(eval(&name, src, &env));
+                }
             }
         }
         "try_statement" => {
