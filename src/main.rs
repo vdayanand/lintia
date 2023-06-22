@@ -501,19 +501,34 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
-fn load_env(file: &str) -> Vec<String> {
-    let toml_str = fs::read_to_string(file).expect("Failed to read file");
-    let parsed_toml: Value = toml::from_str(&toml_str).expect("Failed to parse TOML");
-    if let Some(envs) = parsed_toml.get("envs") {
-        if let Some(envs_array) = envs.as_array() {
-            let envs_vec: Vec<String> = envs_array
-                .iter()
-                .filter_map(|env_value| env_value.as_str().map(String::from))
-                .collect();
-            return envs_vec;
+fn load_env(dir: &str) -> Vec<String> {
+        // Read the directory
+    let entries = fs::read_dir(dir)
+        .expect("Failed to read directory");
+    let mut envs_list = Vec::<String>::new();
+    // Iterate over the directory entries
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if let Some(extension) = path.extension() {
+                if extension == "toml" {
+                    if let Ok(contents) = fs::read_to_string(&path) {
+                        let parsed_toml: Value = toml::from_str(&contents).expect("Failed to parse TOML");
+                        if let Some(envs) = parsed_toml.get("envs") {
+                            if let Some(envs_array) = envs.as_array() {
+                                let envs_vec: Vec<String> = envs_array
+                                    .iter()
+                                    .filter_map(|env_value| env_value.as_str().map(String::from))
+                                    .collect();
+                               envs_list.extend_from_slice(&envs_vec);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-    return Vec::<String>::new();
+    return envs_list;
 }
 
 fn load_jl_file(file: &str) -> String {
@@ -523,7 +538,7 @@ fn load_jl_file(file: &str) -> String {
 
 fn main() {
     let src = load_jl_file("test.jl");
-    let env = load_env("src/pkgs/base.toml");
+    let env = load_env("src/pkgs");
     let errs = lint(&src, &env);
     for err in errs {
         println!(
