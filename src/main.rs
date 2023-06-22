@@ -105,9 +105,8 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                     if let Some(second) = fname.named_child(1) {
                         syms.push(Some(node_value(&second, src)));
                     }
-                } else if fname.kind() == "function_object"{
-
-                }else {
+                } else if fname.kind() == "function_object" {
+                } else {
                     print_node(&fname, src);
                     unex(&fname);
                 }
@@ -155,7 +154,8 @@ fn scoped_eval(
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
-    if node.kind() == "module_definition" || node.kind() == "source_file"{
+
+    if node.kind() == "module_definition" || node.kind() == "source_file" {
         for exp in node.named_children(&mut tc) {
             let syms = toplevel_symbol(&exp, src);
             for sym in syms {
@@ -222,7 +222,7 @@ fn scoped_eval(
                             newenv.push(node_value(&lhs, src));
                         }
                     }
-                }else {
+                } else {
                     print_node(&param, src);
                     panic!("Howzzz");
                 }
@@ -250,7 +250,6 @@ fn scoped_eval(
                 }
             }
         }
-
 
         if child.kind() == "catch_clause" {
             break;
@@ -302,7 +301,6 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "export_statement" => (),
 
         "function_definition"
-
         | "let_statement"
         | "for_statement"
         | "while_statement"
@@ -313,9 +311,30 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "function_object" => {
-             if let Some(second) = node.named_child(1) {
-                 result.extend(eval(&second, src, &env));
-             }
+            if let Some(second) = node.named_child(1) {
+                result.extend(eval(&second, src, &env));
+            }
+        }
+        "comprehension_expression" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(&env);
+            if let Some(clause) = node.named_child(1) {
+                if clause.kind() == "for_clause" {
+                    if let Some(binding) = clause.named_child(0) {
+                        if let Some(var) = binding.named_child(0) {
+                            newenv.push(node_value(&var, src))
+                        }
+                        if let Some(expr) = binding.named_child(1) {
+                            result.extend(eval(&expr, src, &env));
+                        }
+                    }
+                } else {
+                    unex(&clause);
+                }
+            }
+            if let Some(exp) = node.named_child(0) {
+                result.extend(eval(&exp, src, &newenv));
+            }
         }
         "macrocall_expression" => {
             if let Some(firstnode) = node.named_child(0) {
@@ -329,7 +348,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
-        "parenthesized_expression" | "global_declaration" | "slurp_parameter"=> {
+        "parenthesized_expression" | "global_declaration" | "slurp_parameter" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(&rnode, src, env));
             }
@@ -428,8 +447,8 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&first, src, &env));
             }
         }
-        "index_expression" | "vector_expression" | "call_expression"
-        | "argument_list" | "keyword_parameters" => {
+        "index_expression" | "vector_expression" | "call_expression" | "argument_list"
+        | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() != "operator" {
@@ -534,9 +553,8 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 }
 
 fn load_env(dir: &str) -> Vec<String> {
-        // Read the directory
-    let entries = fs::read_dir(dir)
-        .expect("Failed to read directory");
+    // Read the directory
+    let entries = fs::read_dir(dir).expect("Failed to read directory");
     let mut envs_list = Vec::<String>::new();
     // Iterate over the directory entries
     for entry in entries {
@@ -545,14 +563,15 @@ fn load_env(dir: &str) -> Vec<String> {
             if let Some(extension) = path.extension() {
                 if extension == "toml" {
                     if let Ok(contents) = fs::read_to_string(&path) {
-                        let parsed_toml: Value = toml::from_str(&contents).expect("Failed to parse TOML");
+                        let parsed_toml: Value =
+                            toml::from_str(&contents).expect("Failed to parse TOML");
                         if let Some(envs) = parsed_toml.get("envs") {
                             if let Some(envs_array) = envs.as_array() {
                                 let envs_vec: Vec<String> = envs_array
                                     .iter()
                                     .filter_map(|env_value| env_value.as_str().map(String::from))
                                     .collect();
-                               envs_list.extend_from_slice(&envs_vec);
+                                envs_list.extend_from_slice(&envs_vec);
                             }
                         }
                     }
@@ -993,5 +1012,18 @@ mod tests {
         assert_eq!(two.symbol, "z".to_string());
         assert_eq!(two.row, 1);
         assert_eq!(two.column, 35);
+    }
+    #[test]
+    fn test_comprehension() {
+        let source_code = r#"
+        [x+y for x in 1:100]
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 11);
     }
 }
