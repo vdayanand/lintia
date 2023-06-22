@@ -297,8 +297,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "line_comment"
         | "command_literal"
         | "quote_expression"
-        | "macro_definition"
-        | "export_statement" => (),
+        | "macro_definition" => (),
 
         "function_definition"
         | "let_statement"
@@ -388,7 +387,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "pair_expression"
         | "range_expression"
         | "command_string"
-        | "type_argument_list" => {
+        | "type_argument_list" | "export_statement" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -1025,5 +1024,19 @@ mod tests {
         assert_eq!(one.symbol, "y".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 11);
+    }
+    #[test]
+    fn test_export() {
+        let source_code = r#"
+         export f, g
+         f(x)=1
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "g".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 19);
     }
 }
