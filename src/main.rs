@@ -105,7 +105,10 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                     if let Some(second) = fname.named_child(1) {
                         syms.push(Some(node_value(&second, src)));
                     }
-                } else {
+                } else if fname.kind() == "function_object"{
+
+                }else {
+                    print_node(&fname, src);
                     unex(&fname);
                 }
             }
@@ -213,7 +216,13 @@ fn scoped_eval(
                             newenv.push(node_value(&lhs, src));
                         }
                     }
-                } else {
+                } else if param.kind() == "slurp_parameter" {
+                    if let Some(lhs) = param.named_child(0) {
+                        if lhs.kind() == "identifier" {
+                            newenv.push(node_value(&lhs, src));
+                        }
+                    }
+                }else {
                     print_node(&param, src);
                     panic!("Howzzz");
                 }
@@ -245,6 +254,11 @@ fn scoped_eval(
 
         if child.kind() == "catch_clause" {
             break;
+        }
+        if child.kind() == "function_object" {
+            if let Some(first) = child.named_child(0) {
+                newenv.push(node_value(&first, src));
+            }
         }
 
         if child.kind() == "for_binding" {
@@ -298,6 +312,11 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rhs, src, env))
             }
         }
+        "function_object" => {
+             if let Some(second) = node.named_child(1) {
+                 result.extend(eval(&second, src, &env));
+             }
+        }
         "macrocall_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if let Some(name) = firstnode.named_child(0) {
@@ -310,7 +329,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&macro_arg, src, env));
             }
         }
-        "parenthesized_expression" | "global_declaration" => {
+        "parenthesized_expression" | "global_declaration" | "slurp_parameter"=> {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(&rnode, src, env));
             }
@@ -419,22 +438,10 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             }
         }
         "binary_expression" => {
-            if let Some(firstnode) = node.named_child(0) {
-                if firstnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(&firstnode, src, env, "normal") {
-                        result.push(failed);
-                    }
-                } else {
-                    result.extend(eval(&firstnode, src, env));
-                }
-            }
-            if let Some(secondnode) = node.named_child(2) {
-                if secondnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(&secondnode, src, env, "normal") {
-                        result.push(failed);
-                    }
-                } else {
-                    result.extend(eval(&secondnode, src, env));
+            let mut tc = node.walk();
+            for operand in node.named_children(&mut tc) {
+                if operand.kind() != "operator" {
+                    result.extend(eval(&operand, src, &env));
                 }
             }
         }
@@ -507,7 +514,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
 
         "if_statement" => scoped_eval(&node, src, env, &mut result, 0),
         _ => {
-            print_node(&node, src);
+            print_node(&node.parent().unwrap(), src);
             panic!("Unimplemented kind {}", node.kind());
         }
     }
@@ -969,5 +976,22 @@ mod tests {
         assert_eq!(two.symbol, "x".to_string());
         assert_eq!(two.row, 7);
         assert_eq!(two.column, 8);
+    }
+    #[test]
+    fn test_function_object() {
+        let source_code = r#"
+        (rx::Object)(x) = rx + x - z
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 2);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Object".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 13);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "z".to_string());
+        assert_eq!(two.row, 1);
+        assert_eq!(two.column, 35);
     }
 }
