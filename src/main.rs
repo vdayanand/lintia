@@ -57,6 +57,61 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>) -> Option<UndefVar> {
     return None;
 }
 
+fn unex(node: &Node) {
+    panic!("Unexpected kind {}", node.kind())
+}
+fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
+    let mut syms = Vec::<Option<String>>::new();
+    match node.kind() {
+        "const_declaration" => {
+            if let Some(first) = node.named_child(0) {
+                if first.kind() == "assignment" {
+                    if let Some(name) = node.named_child(0) {
+                        syms.push(Some(node_value(&name, src)));
+                    }
+                } else {
+                    unex(&first);
+                }
+            }
+        }
+        "function_definition" | "short_function_definition" | "macro_definition" => {
+            if let Some(fname) = node.named_child(0) {
+                if fname.kind() == "identifier" {
+                    syms.push(Some(node_value(&fname, src)));
+                } else if fname.kind() == "field_expression" {
+                    if let Some(second) = fname.named_child(1) {
+                        syms.push(Some(node_value(&second, src)));
+                    }
+                } else {
+                    unex(&fname);
+                }
+            }
+        }
+        "import_statement" => {
+            if let Some(child) = node.named_child(0) {
+                if child.kind() == "identifier" {
+                    syms.push(Some(node_value(&child, src)));
+                }
+                if child.kind() == "selected_import" {
+                    let mut tc = child.walk();
+                    for arg in child.named_children(&mut tc).skip(1) {
+                        syms.push(Some(node_value(&arg, src)));
+                    }
+                }
+            }
+        }
+        "abstract_definition" | "struct_definition" | "module_definition" => {
+            if let Some(child) = node.named_child(0) {
+                if child.kind() == "identifier" {
+                    syms.push(Some(node_value(&child, src)));
+                }
+            }
+        }
+        _ => (),
+    }
+    return syms;
+}
+
 fn scoped_eval(
     node: &Node,
     src: &String,
@@ -240,6 +295,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "command_literal"
         | "quote_expression"
         | "export_statement" => (),
+
         "function_definition"
         | "macro_definition"
         | "let_statement"
@@ -329,7 +385,20 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
 
         "module_definition" => {
-            scoped_eval(&node, src, &env, &mut result, 0);
+            let mut tc = node.walk();
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(env);
+            for exp in node.named_children(&mut tc) {
+                let syms = toplevel_symbol(&exp, src);
+                for sym in syms {
+                    if let Some(symbol) = sym {
+                        newenv.push(symbol);
+                    } else {
+                        unex(&exp);
+                    }
+                }
+            }
+            scoped_eval(&node, src, &newenv, &mut result, 0);
         }
 
         "identifier" => {
