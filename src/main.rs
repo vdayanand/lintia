@@ -379,7 +379,12 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&rhs, src, &env));
             }
         }
-        "index_expression" | "vector_expression" | "call_expression" | "field_expression"
+        "field_expression" => {
+            if let Some(first) = node.named_child(0) {
+                result.extend(eval(&first, src, &env));
+            }
+        }
+        "index_expression" | "vector_expression" | "call_expression"
         | "argument_list" | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
@@ -885,5 +890,21 @@ mod tests {
         assert_eq!(three.symbol, "k".to_string());
         assert_eq!(three.row, 5);
         assert_eq!(three.column, 8);
+    }
+    #[test]
+    fn test_field_expression() {
+        let source_code = r#"
+        using X
+        X.y
+        X.y.x.x()
+        Z.y
+        "#;
+        let env: Vec<String> = vec![];
+        let mut errs = lint(&source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Z".to_string());
+        assert_eq!(one.row, 4);
+        assert_eq!(one.column, 8);
     }
 }
