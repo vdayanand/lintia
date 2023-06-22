@@ -64,13 +64,25 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
     let mut syms = Vec::<Option<String>>::new();
     match node.kind() {
         "const_declaration" => {
-            if let Some(first) = node.named_child(0) {
-                if first.kind() == "assignment" {
-                    if let Some(name) = node.named_child(0) {
-                        syms.push(Some(node_value(&name, src)));
+            if let Some(assign) = node.named_child(0) {
+                if assign.kind() == "assignment" {
+                    if let Some(var) = assign.named_child(0) {
+                        if var.kind() == "identifier" {
+                            syms.push(Some(node_value(&var, src)));
+                        } else if var.kind() == "typed_expression" {
+                            if let Some(typevar) = var.named_child(0) {
+                                if typevar.kind() == "identifier" {
+                                    syms.push(Some(node_value(&typevar, src)));
+                                } else {
+                                    print_node(&typevar, src);
+                                    panic!("Unexpected")
+                                }
+                            }
+                        }
                     }
                 } else {
-                    unex(&first);
+                    print_node(&node, src);
+                    panic!("Unexpected!!")
                 }
             }
         }
@@ -122,17 +134,23 @@ fn scoped_eval(
     let mut tc = node.walk();
     let mut newenv = Vec::<String>::new();
     newenv.extend_from_slice(env);
-    for child in node.named_children(&mut tc).skip(skip) {
-        if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
-            if let Some(fname) = child.named_child(0) {
-                newenv.push(node_value(&fname, src));
+    if node.kind() == "module_definition" || node.kind() == "source_file"{
+        for exp in node.named_children(&mut tc) {
+            let syms = toplevel_symbol(&exp, src);
+            for sym in syms {
+                if let Some(symbol) = sym {
+                    newenv.push(symbol);
+                } else {
+                    unex(&exp);
+                }
             }
         }
+    }
+    for child in node.named_children(&mut tc).skip(skip) {
         if child.kind() == "elseif_clause" || child.kind() == "else_clause" {
             result.extend(eval(&child, src, &env));
             continue;
         }
-
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
             for param in child.named_children(&mut tc) {
@@ -205,56 +223,10 @@ fn scoped_eval(
                 }
             }
         }
-        if child.kind() == "abstract_definition"
-            || child.kind() == "struct_definition"
-            || child.kind() == "module_definition"
-        {
-            if let Some(child) = child.named_child(0) {
-                if child.kind() == "identifier" {
-                    newenv.push(node_value(&child, src));
-                }
-            }
-        }
-        if child.kind() == "import_statement" {
-            if let Some(child) = child.named_child(0) {
-                if child.kind() == "identifier" {
-                    newenv.push(node_value(&child, src));
-                }
-                if child.kind() == "selected_import" {
-                    let mut tc = child.walk();
-                    for arg in child.named_children(&mut tc).skip(1) {
-                        newenv.push(node_value(&arg, src));
-                    }
-                }
-            }
-        }
+
 
         if child.kind() == "catch_clause" {
             break;
-        }
-
-        if child.kind() == "const_declaration" {
-            if let Some(assign) = child.named_child(0) {
-                if assign.kind() == "assignment" {
-                    if let Some(var) = assign.named_child(0) {
-                        if var.kind() == "identifier" {
-                            newenv.push(node_value(&var, src));
-                        } else if var.kind() == "typed_expression" {
-                            if let Some(typevar) = var.named_child(0) {
-                                if typevar.kind() == "identifier" {
-                                    newenv.push(node_value(&typevar, src));
-                                } else {
-                                    print_node(&typevar, src);
-                                    panic!("Unexpected")
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    print_node(&node, src);
-                    panic!("Unexpected!!")
-                }
-            }
         }
 
         if child.kind() == "for_binding" {
@@ -385,20 +357,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         }
 
         "module_definition" => {
-            let mut tc = node.walk();
-            let mut newenv = Vec::<String>::new();
-            newenv.extend_from_slice(env);
-            for exp in node.named_children(&mut tc) {
-                let syms = toplevel_symbol(&exp, src);
-                for sym in syms {
-                    if let Some(symbol) = sym {
-                        newenv.push(symbol);
-                    } else {
-                        unex(&exp);
-                    }
-                }
-            }
-            scoped_eval(&node, src, &newenv, &mut result, 0);
+            scoped_eval(&node, src, &env, &mut result, 0);
         }
 
         "identifier" => {
@@ -651,19 +610,22 @@ mod tests {
     #[test]
     fn test_func() {
         let source_code = r#"
+         module Test
          function hello(x)
             y
+         end
          end
          "#;
         let env = vec!["y".to_string()];
         let errs = lint(&source_code, &env);
+        println!("{:?}",errs);
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
         let mut errs = lint(&source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 2);
+        assert_eq!(one.row, 3);
         assert_eq!(one.column, 12);
     }
     #[test]
