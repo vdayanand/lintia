@@ -423,7 +423,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             scoped_eval(&node, src, &env, &mut result, 0);
         }
 
-        "identifier" => {
+        "identifier" | "macro_identifier" => {
             if let Some(failed) = analyse(&node, src, env, "normal") {
                 result.push(failed);
             }
