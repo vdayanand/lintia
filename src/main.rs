@@ -2,10 +2,12 @@ use colored::Colorize;
 use std::fs;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser};
+//use std::io::Read;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
+
 #[derive(Debug)]
 struct UndefVar {
     symbol: String,
@@ -13,9 +15,27 @@ struct UndefVar {
     column: usize,
 }
 
+#[derive(Debug)]
+struct LintInfo {
+    undefvars: Vec<UndefVar>,
+    toplevel: Vec<String>,
+}
+
+//fn read_file_contents(path: &str) -> Result<String, std::io::Error> {
+//   println!("path {}", path);
+//   // Open the file
+//   let mut file = fs::File::open(path)?;
+//
+//   // Read the contents of the file into a string
+//   let mut contents = String::new();
+//   file.read_to_string(&mut contents)?;
+//   Ok(contents)
+//}
+
 fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
+    println!("val: {}", node_value(node, src));
     let mut tc = node.walk();
     for (id, child) in node.named_children(&mut tc).enumerate() {
         println!(
@@ -43,6 +63,24 @@ fn node_value(node: &Node, src: &String) -> String {
     return "".to_string();
 }
 
+fn include_toplevel(node: &Node, src: &String, env: &Vec<String>) -> Option<LintInfo>{
+    if let Some(fileargs) = node.named_child(1) {
+      if fileargs.kind() == "argument_list" {
+          let mut tc = fileargs.walk();
+          for filepath in fileargs.named_children(&mut tc) {
+              let mut path = String::from("/Users/vdayanand/rs/lintia/");
+              path.push_str(node_value(&filepath, src).as_str().trim_matches('"'));
+              let src = load_jl_file(&path);
+              return Some(lint(&src, env));
+          }
+      }
+      else {
+          print_node(&fileargs, src);
+          unex(&fileargs);
+      }
+    }
+    None
+}
 fn analyse(node: &Node, src: &String, env: &Vec<String>, idtype: &str) -> Option<UndefVar> {
     let sym = if idtype == "string_macro" {
         let mut b = String::from("@");
@@ -177,6 +215,19 @@ fn scoped_eval(
         if child.kind() == "elseif_clause" || child.kind() == "else_clause" {
             result.extend(eval(&child, src, &env));
             continue;
+        }
+        if child.kind() == "call_expression"  {
+            if let Some(fname) = child.named_child(0) {
+                if fname.kind() == "identifier" {
+                    let fnameval = node_value(&fname, src);
+                    if fnameval == "include" {
+                        if let Some(lintinfo) = include_toplevel(&child, src, &newenv) {
+                            result.extend(lintinfo.undefvars);
+                            newenv.extend(lintinfo.toplevel);
+                        }
+                    }
+                }
+            }
         }
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
@@ -375,8 +426,19 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         "struct_definition" => {
             let mut tc = node.walk();
             for field in node.named_children(&mut tc) {
-                if let Some(name) = field.named_child(1) {
-                    result.extend(eval(&name, src, &env));
+                if field.kind() == "identifier" {
+                    continue;
+                }
+               else if field.kind() == "typed_expression" {
+                    if let Some(typed) = field.named_child(1) {
+                        result.extend(eval(&typed, src, &env));
+                    }
+                }
+                else if field.kind() == "type_clause" {
+                    result.extend(eval(&field, src, &env));
+                }
+                else {
+                    unex(&field);
                 }
             }
         }
@@ -462,7 +524,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&first, src, &env));
             }
         }
-        "index_expression" | "vector_expression" | "call_expression" | "argument_list"
+        "index_expression" | "vector_expression" | "argument_list"
         | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
@@ -471,7 +533,15 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-        "binary_expression" => {
+        "call_expression"  => {
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() != "operator" {
+                    result.extend(eval(&child, src, &env));
+                }
+            }
+        }
+       "binary_expression" => {
             let mut tc = node.walk();
             for operand in node.named_children(&mut tc) {
                 if operand.kind() != "operator" {
@@ -555,7 +625,18 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
-fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+fn lint_ex(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+    let mut parser = Parser::new();
+    let language = unsafe { tree_sitter_julia() };
+    parser.set_language(language).unwrap();
+    let tree = parser.parse(src, None).unwrap();
+    let root_node = tree.root_node();
+    let mut result: Vec<UndefVar> = vec![];
+    scoped_eval(&root_node, &String::from(src), &env, &mut result, 0);
+    return result;
+}
+
+fn lint(src: &str, env: &Vec<String>) -> LintInfo {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
@@ -563,8 +644,19 @@ fn lint(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     let root_node = tree.root_node();
     let mut result: Vec<UndefVar> = vec![];
     //    print_node(&root_node, &src.to_string());
-    scoped_eval(&root_node, &String::from(src), &env, &mut result, 0);
-    return result;
+    let mut tc = root_node.walk();
+    let mut toplevelenv = Vec::<String>::new();
+    toplevelenv.extend_from_slice(env);
+    for topchild in root_node.named_children(&mut tc) {
+        let syms = toplevel_symbol(&topchild, &String::from(src));
+        for sym in syms {
+            if let Some(symbol) = sym {
+                toplevelenv.push(symbol);
+            }
+        }
+    }
+    scoped_eval(&root_node, &String::from(src), &toplevelenv, &mut result, 0);
+    return LintInfo {undefvars: result, toplevel: toplevelenv};
 }
 
 fn load_env(dir: &str) -> Vec<String> {
@@ -605,8 +697,8 @@ fn load_jl_file(file: &str) -> String {
 fn main() {
     let src = load_jl_file("test.jl");
     let env = load_env("src/pkgs");
-    let errs = lint(&src, &env);
-    for err in errs {
+    let linfo = lint(&src, &env);
+    for err in linfo.undefvars {
         println!(
             "Undefined symbol {} found at {}:{} ",
             err.symbol.red(),
@@ -634,7 +726,7 @@ mod tests {
          end
          "#;
         let env = vec!["x".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 3);
@@ -662,7 +754,7 @@ mod tests {
          end
          "#;
         let env = vec!["x".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 3);
@@ -674,14 +766,14 @@ mod tests {
          z(x)
          "#;
         let env = vec!["x".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         let one = errs.remove(0);
         assert_eq!(errs.len(), 0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 9);
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         let one = errs.remove(0);
         assert_eq!(errs.len(), 1);
         assert_eq!(one.symbol, "z".to_string());
@@ -703,10 +795,10 @@ mod tests {
          end
          "#;
         let env = vec!["y".to_string()];
-        let errs = lint(&source_code, &env);
+        let errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -719,7 +811,7 @@ mod tests {
         f(x, y) = f(x, y-1)+1
         "#;
         let env: Vec<String> = vec![];
-        let errs = lint(&source_code, &env);
+        let errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 0);
     }
     #[test]
@@ -728,7 +820,7 @@ mod tests {
            RG[]["ds"] = "d"
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "RG".to_string());
@@ -750,7 +842,7 @@ mod tests {
         end
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -782,7 +874,7 @@ mod tests {
         end
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
@@ -794,21 +886,26 @@ mod tests {
         let source_code = r#"
         abstract type Animal end
         struct Typee <: Animal
-           Y
+           Y::Int
            Z
         end
         struct Typee2 <: Animal2
-           Y
-           Z
+           T
+           M
         end
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
-        assert_eq!(errs.len(), 1);
+        let mut errs = lint(&source_code, &env).undefvars;
+        println!("{:?}", errs);
+        assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
-        assert_eq!(one.symbol, "Animal2".to_string());
-        assert_eq!(one.row, 6);
-        assert_eq!(one.column, 25);
+        assert_eq!(one.symbol, "Int".to_string());
+        assert_eq!(one.row, 3);
+        assert_eq!(one.column, 14);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "Animal2".to_string());
+        assert_eq!(two.row, 6);
+        assert_eq!(two.column, 25);
     }
     #[test]
     fn test_doclause() {
@@ -820,7 +917,7 @@ mod tests {
         end
         "#;
         let env = vec!["test".to_string(), "x".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -842,7 +939,7 @@ mod tests {
          x
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Animal".to_string());
@@ -855,7 +952,7 @@ mod tests {
            f(x::Int, y)=1
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
@@ -868,7 +965,7 @@ mod tests {
         f(y, x::Int, y=1, j=2; k=1, m=2)
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
@@ -898,7 +995,7 @@ mod tests {
            end
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
@@ -926,7 +1023,7 @@ mod tests {
         end
         "#;
         let env: Vec<String> = vec!["y".to_string(), "Vector".to_string(), "Int".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Unit".to_string());
@@ -956,7 +1053,7 @@ mod tests {
         z
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -980,7 +1077,7 @@ mod tests {
         Z.y
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Z".to_string());
@@ -1000,7 +1097,7 @@ mod tests {
         @x 1
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1017,7 +1114,7 @@ mod tests {
         (rx::Object)(x) = rx + x - z
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Object".to_string());
@@ -1034,7 +1131,7 @@ mod tests {
         [x+y for x in 1:100]
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1048,7 +1145,7 @@ mod tests {
          f(x)=1
         "#;
         let env: Vec<String> = vec![];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "g".to_string());
@@ -1065,7 +1162,7 @@ mod tests {
         j
         "#;
         let env: Vec<String> = vec!["pair".to_string()];
-        let mut errs = lint(&source_code, &env);
+        let mut errs = lint(&source_code, &env).undefvars;
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
