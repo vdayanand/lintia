@@ -7,31 +7,6 @@ use tree_sitter::{Language, Node, Parser};
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
-
-#[derive(Debug)]
-struct UndefVar {
-    symbol: String,
-    row: usize,
-    column: usize,
-}
-
-#[derive(Debug)]
-struct LintInfo {
-    undefvars: Vec<UndefVar>,
-    toplevel: Vec<String>,
-}
-
-//fn read_file_contents(path: &str) -> Result<String, std::io::Error> {
-//   println!("path {}", path);
-//   // Open the file
-//   let mut file = fs::File::open(path)?;
-//
-//   // Read the contents of the file into a string
-//   let mut contents = String::new();
-//   file.read_to_string(&mut contents)?;
-//   Ok(contents)
-//}
-
 fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
@@ -44,7 +19,96 @@ fn print_node(node: &tree_sitter::Node, src: &String) {
             node_value(&child, src).yellow(),
             child.kind().yellow()
         );
+    }}
+
+
+#[derive(Debug)]
+struct UndefVar {
+    symbol: String,
+    row: usize,
+    column: usize,
+}
+
+#[derive(Debug)]
+struct EvalCtx {
+    global_env: Vec<String>,
+    scopes: Vec<Vec<String>>,
+    src: String,
+    src_file: String,
+}
+
+// impl of Val
+impl EvalCtx {
+    fn is_defined(&self, id: &String) -> bool {
+        for scope in &self.scopes {
+            if scope.contains(&id) {
+                return true
+            }
+        }
+        if self.global_env.contains(&id) {
+            return true
+        }
+        return false
     }
+    fn analyse(&self, node: &Node, idtype: &str) -> Option<UndefVar>{
+        let sym = if idtype == "string_macro" {
+            let mut b = String::from("@");
+            b.push_str(&self.node_value(&node));
+            b.push_str(&String::from("_str"));
+            b
+        } else if idtype == "macro" {
+            let mut b = String::from("@");
+            b.push_str(&self.node_value(&node));
+            b
+        } else {
+            self.node_value(&node)
+        };
+        if !self.is_defined(&sym) {
+            let r = row(&node);
+            let c = col(&node);
+            return Some(UndefVar {
+                symbol: sym,
+                row: r,
+                column: c,
+            });
+        }
+        return None;
+    }
+    fn node_value(&self, node: &Node) -> String {
+        if let Ok(val) = node.utf8_text(self.src.as_bytes()) {
+              return val.to_string();
+        }
+        return "".to_string();
+    }
+
+    fn print_node(&self, node: &Node){
+        println!("Kind: {}", node.kind().cyan());
+        println!("has error: {}", node.has_error());
+        println!("val: {}", self.node_value(node));
+        let mut tc = node.walk();
+        for (id, child) in node.named_children(&mut tc).enumerate() {
+            println!(
+                "Child({}): {}::{}",
+                id,
+                self.node_value(&child).yellow(),
+                child.kind().yellow()
+            );
+        }
+    }
+
+    fn add_scope(&mut self, scope: Vec<String>){
+        self.scopes.push(scope);
+    }
+
+    fn add_scope_symbol(&mut self, scopeidx: usize, symbol: &String){
+        self.scopes[scopeidx].push(symbol.to_string());
+    }
+}
+
+#[derive(Debug)]
+struct LintInfo {
+    undefvars: Vec<UndefVar>,
+    toplevel: Vec<String>,
 }
 
 fn row(node: &Node) -> usize {
@@ -54,13 +118,6 @@ fn row(node: &Node) -> usize {
 fn col(node: &Node) -> usize {
     let p = node.start_position();
     return p.column;
-}
-
-fn node_value(node: &Node, src: &String) -> String {
-    if let Ok(val) = node.utf8_text(src.as_bytes()) {
-        return val.to_string();
-    }
-    return "".to_string();
 }
 
 fn include_toplevel(node: &Node, src: &String, env: &Vec<String>) -> Option<LintInfo>{
@@ -106,6 +163,12 @@ fn analyse(node: &Node, src: &String, env: &Vec<String>, idtype: &str) -> Option
     return None;
 }
 
+fn node_value(node: &Node, src: &String) -> String {
+    if let Ok(val) = node.utf8_text(src.as_bytes()) {
+        return val.to_string();
+    }
+    return "".to_string();
+    }
 fn unex(node: &Node) {
     panic!("Unexpected kind {}", node.kind())
 }
@@ -643,7 +706,7 @@ fn lint(src: &str, env: &Vec<String>) -> LintInfo {
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
     let mut result: Vec<UndefVar> = vec![];
-    //    print_node(&root_node, &src.to_string());
+        print_node(&root_node, &src.to_string());
     let mut tc = root_node.walk();
     let mut toplevelenv = Vec::<String>::new();
     toplevelenv.extend_from_slice(env);
@@ -694,7 +757,7 @@ fn load_jl_file(file: &str) -> String {
     return jl_str;
 }
 
-fn main() {
+fn mainx() {
     let src = load_jl_file("test.jl");
     let env = load_env("src/pkgs");
     let linfo = lint(&src, &env);
@@ -706,6 +769,15 @@ fn main() {
             err.column
         );
     }
+}
+fn main() {
+    let mut ctx = EvalCtx {
+        global_env: vec![],
+        scopes: vec![vec![]],
+        src: "f(x)=1".to_string(),
+        src_file: "test.jl".to_string(),
+    };
+    println!("{}", ctx.is_defined(&"x".to_string()));
 }
 #[cfg(test)]
 mod tests {
