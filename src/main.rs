@@ -1,5 +1,6 @@
 use colored::Colorize;
 use std::fs;
+use std::rc::Rc;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser};
 //use std::io::Read;
@@ -19,6 +20,26 @@ struct UndefVar {
 struct LintInfo {
     undefvars: Vec<UndefVar>,
     toplevel: Vec<String>,
+}
+
+#[derive(Debug)]
+struct Module {
+    name: String,
+    symbols: Symbols,
+    children: Vec<Module>,
+}
+
+#[derive(Debug)]
+struct Symbols {
+    exported: Vec<String>,
+    unexported: Vec<String>,
+}
+
+#[derive(Debug)]
+struct Ctx {
+    current: Option<Rc<Module>>,
+    loaded_modules: Vec<Module>,
+    default_env: Vec<String>,
 }
 
 //fn read_file_contents(path: &str) -> Result<String, std::io::Error> {
@@ -63,21 +84,20 @@ fn node_value(node: &Node, src: &String) -> String {
     return "".to_string();
 }
 
-fn include_toplevel(node: &Node, src: &String, env: &Vec<String>) -> Option<LintInfo>{
+fn include_toplevel(node: &Node, src: &String, env: &Vec<String>) -> Option<LintInfo> {
     if let Some(fileargs) = node.named_child(1) {
-      if fileargs.kind() == "argument_list" {
-          let mut tc = fileargs.walk();
-          for filepath in fileargs.named_children(&mut tc) {
-              let mut path = String::from("/Users/vdayanand/rs/lintia/");
-              path.push_str(node_value(&filepath, src).as_str().trim_matches('"'));
-              let src = load_jl_file(&path);
-              return Some(lint(&src, env));
-          }
-      }
-      else {
-          print_node(&fileargs, src);
-          unex(&fileargs);
-      }
+        if fileargs.kind() == "argument_list" {
+            let mut tc = fileargs.walk();
+            for filepath in fileargs.named_children(&mut tc) {
+                let mut path = String::from("/Users/vdayanand/rs/lintia/");
+                path.push_str(node_value(&filepath, src).as_str().trim_matches('"'));
+                let src = load_jl_file(&path);
+                return Some(lint(&src, env));
+            }
+        } else {
+            print_node(&fileargs, src);
+            unex(&fileargs);
+        }
     }
     None
 }
@@ -118,13 +138,12 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<Option<String>> {
                     if let Some(var) = assign.named_child(0) {
                         if var.kind() == "identifier" {
                             syms.push(Some(node_value(&var, src)));
-                        }
-                        else if var.kind() == "bare_tuple" || var.kind() == "tuple_expression" {
+                        } else if var.kind() == "bare_tuple" || var.kind() == "tuple_expression" {
                             let mut tc = var.walk();
                             for val in var.named_children(&mut tc) {
                                 syms.push(Some(node_value(&val, src)));
                             }
-                        }                        else if var.kind() == "typed_expression" {
+                        } else if var.kind() == "typed_expression" {
                             if let Some(typevar) = var.named_child(0) {
                                 if typevar.kind() == "identifier" {
                                     syms.push(Some(node_value(&typevar, src)));
@@ -216,7 +235,7 @@ fn scoped_eval(
             result.extend(eval(&child, src, &env));
             continue;
         }
-        if child.kind() == "call_expression"  {
+        if child.kind() == "call_expression" {
             if let Some(fname) = child.named_child(0) {
                 if fname.kind() == "identifier" {
                     let fnameval = node_value(&fname, src);
@@ -297,8 +316,7 @@ fn scoped_eval(
                     if let Some(lhstyped) = lhs.named_child(0) {
                         newenv.push(node_value(&lhstyped, src));
                     }
-                }
-                else if lhs.kind() == "tuple_expression" || lhs.kind() == "bare_tuple" {
+                } else if lhs.kind() == "tuple_expression" || lhs.kind() == "bare_tuple" {
                     let mut tc = lhs.walk();
                     for val in lhs.named_children(&mut tc) {
                         newenv.push(node_value(&val, src));
@@ -349,7 +367,7 @@ fn scoped_eval(
 
 fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
-//    print_node(&node, src);
+    //    print_node(&node, src);
     match node.kind() {
         "string_literal"
         | "boolean_literal"
@@ -367,7 +385,9 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "let_statement"
         | "for_statement"
         | "while_statement"
-        | "short_function_definition"| "compound_statement"|"finally_clause" => scoped_eval(node, src, env, &mut result, 0),
+        | "short_function_definition"
+        | "compound_statement"
+        | "finally_clause" => scoped_eval(node, src, env, &mut result, 0),
         "variable_declaration" | "for_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(&rhs, src, env))
@@ -428,16 +448,13 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
             for field in node.named_children(&mut tc) {
                 if field.kind() == "identifier" {
                     continue;
-                }
-               else if field.kind() == "typed_expression" {
+                } else if field.kind() == "typed_expression" {
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(&typed, src, &env));
                     }
-                }
-                else if field.kind() == "type_clause" {
+                } else if field.kind() == "type_clause" {
                     result.extend(eval(&field, src, &env));
-                }
-                else {
+                } else {
                     unex(&field);
                 }
             }
@@ -465,7 +482,8 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
         | "pair_expression"
         | "range_expression"
         | "command_string"
-        | "type_argument_list" | "export_statement" => {
+        | "type_argument_list"
+        | "export_statement" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 result.extend(eval(&child, src, env));
@@ -524,8 +542,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 result.extend(eval(&first, src, &env));
             }
         }
-        "index_expression" | "vector_expression" | "argument_list"
-        | "keyword_parameters" => {
+        "index_expression" | "vector_expression" | "argument_list" | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() != "operator" {
@@ -533,7 +550,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-        "call_expression"  => {
+        "call_expression" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() != "operator" {
@@ -541,7 +558,7 @@ fn eval(node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
                 }
             }
         }
-       "binary_expression" => {
+        "binary_expression" => {
             let mut tc = node.walk();
             for operand in node.named_children(&mut tc) {
                 if operand.kind() != "operator" {
@@ -636,6 +653,51 @@ fn lint_ex(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
+fn construct_module_tree(ctx: &Module, root_node: &Node, src: &String) {
+    let mut tc = root_node.walk();
+    let mut symbols = Symbols {
+        exported: vec![],
+        unexported: vec![],
+    };
+    for ele in root_node.named_children(&mut tc) {
+        let unexported = toplevel_symbol(&ele, src);
+        symbols.unexported.extend_from_slice(&unexported);
+        if ele.kind() == "export_statement" {
+            let mut tc = ele.walk();
+            for expsym in ele.named_children(&mut tc) {
+                if expsym.kind() == "identifier" {
+                    symbols.exported.push(node_value(&expsym, src));
+                } else {
+                    unex(&expsym);
+                }
+            }
+        }
+    }
+    let mut current_module = if ctx.current.is_none() {
+        &Module {
+            name: "Main".to_string(),
+            symbols: symbols,
+            children: vec![],
+        }
+    } else {
+        &ctx.module
+    };
+
+    for ele in root_node.named_children(&mut tc) {
+        if ele.kind() == "module_definition" {
+            *current_module.children.push(Module {
+                name: "test",
+                symbols: Symbols {
+                    exported: vec![],
+                    unexported: vec![],
+                },
+                children: vec![],
+            });
+            construct_module_tree(&mut ctx, &ele);
+        }
+    }
+}
+
 fn lint(src: &str, env: &Vec<String>) -> LintInfo {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
@@ -645,18 +707,32 @@ fn lint(src: &str, env: &Vec<String>) -> LintInfo {
     let mut result: Vec<UndefVar> = vec![];
     //    print_node(&root_node, &src.to_string());
     let mut tc = root_node.walk();
-    let mut toplevelenv = Vec::<String>::new();
-    toplevelenv.extend_from_slice(env);
-    for topchild in root_node.named_children(&mut tc) {
-        let syms = toplevel_symbol(&topchild, &String::from(src));
-        for sym in syms {
-            if let Some(symbol) = sym {
-                toplevelenv.push(symbol);
+    let mut ctx = Ctx {
+        current: None,
+        loaded_modules: vec![],
+        default_env: vec![],
+    };
+    construct_module_tree(&mut ctx, &root_node, &Vec::from(src));
+    /*
+        let mut toplevelenv = Vec::<String>::new();
+        toplevelenv.extend_from_slice(env);
+        for topchild in root_node.named_children(&mut tc) {
+            let syms = toplevel_symbol(&topchild, &String::from(src));
+            for sym in syms {
+                if let Some(symbol) = sym {
+                    toplevelenv.push(symbol);
+                }
             }
         }
-    }
-    scoped_eval(&root_node, &String::from(src), &toplevelenv, &mut result, 0);
-    return LintInfo {undefvars: result, toplevel: toplevelenv};
+        scoped_eval(&root_node, &String::from(src), &ctx, &mut result, 0);
+        return LintInfo {
+            undefvars: result,
+            toplevel: toplevelenv,
+    };*/
+    return LintInfo {
+        undefvars: vec![],
+        toplevel: vec![],
+    };
 }
 
 fn load_env(dir: &str) -> Vec<String> {
