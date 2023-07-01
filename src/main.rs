@@ -31,7 +31,8 @@ struct Symbols {
 
 #[derive(Debug)]
 struct Ctx {
-    current: Option<Module>,
+    src_module_root: Option<Module>,
+    current_module: String,
     loaded_modules: Vec<Module>,
     default_env: Vec<String>,
 }
@@ -96,7 +97,32 @@ fn include_toplevel(node: &Node, src: &String, env: &Vec<String>) -> Option<Lint
     }
     None
 }*/
-fn analyse(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>, idtype: &str) -> Option<UndefVar> {
+
+fn is_symbol_defined(
+    root: &Module,
+    module_name: &String,
+    symbol_name: &String,
+    acc: &String,
+) -> bool {
+    if acc == module_name {
+        return root.symbols.toplevel.contains(symbol_name);
+    } else {
+        for child in &root.children {
+            let newmod = format!("{}.{}", acc, child.name);
+            if is_symbol_defined(&child, module_name, symbol_name, &newmod) {
+                return true;
+            };
+        }
+    }
+    return false;
+}
+fn analyse(
+    ctx: &Ctx,
+    node: &Node,
+    src: &String,
+    env: &Vec<String>,
+    idtype: &str,
+) -> Option<UndefVar> {
     let sym = if idtype == "string_macro" {
         let mut b = String::from("@");
         b.push_str(&String::from(node_value(&node, src)));
@@ -109,15 +135,15 @@ fn analyse(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>, idtype: &str
     } else {
         node_value(&node, src)
     };
-    let found_module_top = if let Some(current_module) = &ctx.current {
-        current_module.symbols.toplevel.contains(&sym)
-    }
-    else {
+    let found = if let Some(current_mo) = &ctx.src_module_root {
+        is_symbol_defined(current_mo, &ctx.current_module, &sym, &current_mo.name)
+    } else {
         false
     };
-    if env.contains(&sym) || found_module_top || ctx.default_env.contains(&sym){
+    if env.contains(&sym) || found || ctx.default_env.contains(&sym) {
         return None;
     }
+
     let r = row(&node);
     let c = col(&node);
     return Some(UndefVar {
@@ -125,7 +151,6 @@ fn analyse(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>, idtype: &str
         row: r,
         column: c,
     });
-
 }
 
 fn unex(node: &Node) {
@@ -210,7 +235,7 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<String> {
 }
 
 fn scoped_eval(
-    ctx: &Ctx,
+    ctx: &mut Ctx,
     node: &Node,
     src: &String,
     env: &Vec<String>,
@@ -356,7 +381,7 @@ fn scoped_eval(
     }
 }
 
-fn eval(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
+fn eval(ctx: &mut Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     //    print_node(&node, src);
     match node.kind() {
@@ -413,7 +438,7 @@ fn eval(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar
         "macrocall_expression" => {
             if let Some(firstnode) = node.named_child(0) {
                 if let Some(name) = firstnode.named_child(0) {
-                    if let Some(failed) = analyse(ctx, &name, src, env, "macro") {
+                    if let Some(failed) = analyse(&ctx, &name, src, env, "macro") {
                         result.push(failed);
                     }
                 }
@@ -429,7 +454,7 @@ fn eval(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar
         }
         "prefixed_string_literal" => {
             if let Some(name) = node.named_child(0) {
-                if let Some(failed) = analyse(ctx, &name, src, env, "string_macro") {
+                if let Some(failed) = analyse(&ctx, &name, src, env, "string_macro") {
                     result.push(failed);
                 }
             }
@@ -483,7 +508,7 @@ fn eval(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar
         "return_statement" => {
             if let Some(rnode) = node.named_child(0) {
                 if rnode.kind() == "identifier" {
-                    if let Some(failed) = analyse(ctx, &rnode, src, env, "normal") {
+                    if let Some(failed) = analyse(&ctx, &rnode, src, env, "normal") {
                         result.push(failed);
                     }
                 } else {
@@ -506,11 +531,16 @@ fn eval(ctx: &Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar
         }
 
         "module_definition" => {
-            scoped_eval(ctx, &node, src, &env, &mut result, 0);
+            if let Some(name) = node.named_child(0) {
+                ctx.current_module = format!("{}.{}", ctx.current_module, node_value(&name, src))
+            } else {
+                unex(node);
+            }
+            scoped_eval(ctx, &node, src, &env, &mut result, 1);
         }
 
         "identifier" | "macro_identifier" => {
-            if let Some(failed) = analyse(ctx, &node, src, env, "normal") {
+            if let Some(failed) = analyse(&ctx, &node, src, env, "normal") {
                 result.push(failed);
             }
         }
@@ -644,18 +674,19 @@ fn lint_ex(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 */
-fn construct_module_tree(ctx: &mut Ctx, root_node: &Node, src: &String) {
+fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String) -> Module {
     let mut tc = root_node.walk();
     let mut symbols = Symbols {
         exported: vec![],
-        toplevel: vec![],
+        toplevel: current_mod.symbols.toplevel.to_vec(),
     };
-    for ele in root_node.named_children(&mut tc) {
-        let toplevel = toplevel_symbol(&ele, src);
+    for child in root_node.named_children(&mut tc) {
+        let mut tc = child.walk();
+        let toplevel = toplevel_symbol(&child, src);
         symbols.toplevel.extend_from_slice(&toplevel);
-        if ele.kind() == "export_statement" {
-            let mut tc = ele.walk();
-            for expsym in ele.named_children(&mut tc) {
+        if child.kind() == "export_statement" {
+            let mut tc = child.walk();
+            for expsym in child.named_children(&mut tc) {
                 if expsym.kind() == "identifier" {
                     symbols.exported.push(node_value(&expsym, src));
                 } else {
@@ -664,28 +695,30 @@ fn construct_module_tree(ctx: &mut Ctx, root_node: &Node, src: &String) {
             }
         }
     }
-    if ctx.current.is_none() {
-        ctx.current = Some(Module {
-            name: "Main".to_string(),
-            symbols: symbols,
-            children: vec![],
-        })
-    };
+    current_mod.symbols = symbols;
     for ele in root_node.named_children(&mut tc) {
         if ele.kind() == "module_definition" {
-            if let Some(x) = &mut ctx.current {
-                x.children.push(Module {
-                    name: "test".to_string(),
+            let module_name = if let Some(module_name) = ele.named_child(0) {
+                node_value(&module_name, src)
+            } else {
+                unex(&ele);
+                "".to_string()
+            };
+            current_mod.children.push(construct_module_tree(
+                Module {
+                    name: module_name.clone(),
                     symbols: Symbols {
                         exported: vec![],
-                        toplevel: vec![],
+                        toplevel: vec![module_name.clone()],
                     },
                     children: vec![],
-                });
-            }
-            construct_module_tree(ctx, &ele, src);
+                },
+                &ele,
+                src,
+            ));
         }
     }
+    return current_mod;
 }
 
 fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
@@ -694,9 +727,20 @@ fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
     parser.set_language(language).unwrap();
     let tree = parser.parse(src, None).unwrap();
     let root_node = tree.root_node();
+    let mut tc = root_node.walk();
     let mut result: Vec<UndefVar> = vec![];
-    construct_module_tree(ctx, &root_node, &String::from(src));
-    scoped_eval(&ctx, &root_node, &String::from(src), env, &mut result, 0);
+    let mut default_module = Module {
+        name: "Main".to_string(),
+        symbols: Symbols {
+            exported: vec![],
+            toplevel: vec!["Main".to_string()],
+        },
+        children: vec![],
+    };
+    let modtree = construct_module_tree(default_module, &root_node, &String::from(src));
+    ctx.src_module_root = Some(modtree);
+    ctx.current_module = "Main".to_string();
+    scoped_eval(ctx, &root_node, &String::from(src), env, &mut result, 0);
     return result;
 }
 
@@ -739,7 +783,8 @@ fn main() {
     let src = load_jl_file("test.jl");
     let env = load_env("src/pkgs");
     let mut ctx = Ctx {
-        current: None,
+        src_module_root: None,
+        current_module: "".to_string(),
         loaded_modules: vec![],
         default_env: env,
     };
@@ -774,7 +819,8 @@ mod tests {
          "#;
         let env = vec!["x".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -807,7 +853,8 @@ mod tests {
          "#;
         let env = vec!["x".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -825,7 +872,8 @@ mod tests {
          "#;
         let env = vec!["x".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -838,7 +886,8 @@ mod tests {
         assert_eq!(one.column, 9);
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -867,15 +916,17 @@ mod tests {
          "#;
         let env = vec!["y".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -893,11 +944,12 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 0);
     }
     #[test]
@@ -907,7 +959,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -934,7 +987,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -956,7 +1010,7 @@ mod tests {
     #[test]
     fn test_module_imp() {
         let source_code = r#"
-        module X
+         module X
           import A
           import A: c, v
           import A: d
@@ -971,12 +1025,15 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
         let mut errs = lint(&mut ctx, &source_code, &env);
+        println!("errs {:?}", errs);
         assert_eq!(errs.len(), 1);
+
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
         assert_eq!(one.row, 10);
@@ -997,7 +1054,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1024,7 +1082,8 @@ mod tests {
         "#;
         let env = vec!["test".to_string(), "x".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1051,7 +1110,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1069,7 +1129,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1087,7 +1148,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1122,7 +1184,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1155,7 +1218,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec!["y".to_string(), "Vector".to_string(), "Int".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1190,8 +1254,9 @@ mod tests {
         z
         "#;
         let env: Vec<String> = vec![];
-          let mut ctx = Ctx {
-            current: None,
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1220,7 +1285,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1245,7 +1311,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1267,7 +1334,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1289,7 +1357,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1308,7 +1377,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
@@ -1330,7 +1400,8 @@ mod tests {
         "#;
         let env: Vec<String> = vec!["pair".to_string()];
         let mut ctx = Ctx {
-            current: None,
+            src_module_root: None,
+            current_module: "".to_string(),
             loaded_modules: vec![],
             default_env: vec![],
         };
