@@ -656,25 +656,37 @@ fn lint_ex(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
 }
  */
 fn include_node(child: &Node, src: &String) -> Option<Tree> {
-    if let Some(fileargs) = child.named_child(1) {
-        if fileargs.kind() == "argument_list" {
-            let mut tc = fileargs.walk();
-            for filepath in fileargs.named_children(&mut tc) {
-                let mut path = String::from("/Users/vdayanand/rs/lintia/");
-                path.push_str(node_value(&filepath, src).as_str().trim_matches('"'));
-                let src = load_jl_file(&path);
-                let tree = parse_node(src.as_str());
-                return Some(tree);
+    if child.kind() == "call_expression" {
+        if let Some(fname) = child.named_child(0) {
+            if fname.kind() == "identifier" {
+                let fnameval = node_value(&fname, src);
+                if fnameval == "include" {
+                    if let Some(fileargs) = child.named_child(1) {
+                        if fileargs.kind() == "argument_list" {
+                            let mut tc = fileargs.walk();
+                            for filepath in fileargs.named_children(&mut tc) {
+                                let mut path = String::from("/Users/vdayanand/rs/lintia/");
+                                path.push_str(
+                                    node_value(&filepath, src).as_str().trim_matches('"'),
+                                );
+                                let src = load_jl_file(&path);
+                                let tree = parse_node(src.as_str());
+                                return Some(tree);
+                            }
+                        } else {
+                            print_node(&fileargs, src);
+                            unex(&fileargs);
+                        }
+                    } else {
+                        unex(&child);
+                    };
+                }
             }
-        } else {
-            print_node(&fileargs, src);
-            unex(&fileargs);
         }
-    } else {
-        unex(&child);
-    };
+    }
     return None;
 }
+
 fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String) -> Module {
     let mut tc = root_node.walk();
     let mut symbols = Symbols {
@@ -684,23 +696,12 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String
     for child in root_node.named_children(&mut tc) {
         let toplevel = toplevel_symbol(&child, src);
         symbols.toplevel.extend_from_slice(&toplevel);
-        if child.kind() == "call_expression" {
-            if let Some(fname) = child.named_child(0) {
-                if fname.kind() == "identifier" {
-                    let fnameval = node_value(&fname, src);
-                    if fnameval == "include" {
-                        if let Some(tree) = include_node(&child, src) {
-                            let root = tree.root_node();
-                            let mut tc = root.walk();
-                            for child in root.named_children(&mut tc) {
-                                let toplevel = toplevel_symbol(&child, &src);
-                                symbols.toplevel.extend_from_slice(&toplevel);
-                            }
-                        } else {
-                            unex(&child)
-                        }
-                    }
-                }
+        if let Some(tree) = include_node(&child, src) {
+            let root = tree.root_node();
+            let mut tc = root.walk();
+            for child in root.named_children(&mut tc) {
+                let toplevel = toplevel_symbol(&child, &src);
+                symbols.toplevel.extend_from_slice(&toplevel);
             }
         }
         if child.kind() == "export_statement" {
