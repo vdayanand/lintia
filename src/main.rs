@@ -37,7 +37,7 @@ struct Ctx {
     default_env: Vec<String>,
 }
 
-fn print_node(node: &tree_sitter::Node, src: &String) {
+fn print_node(node: &tree_sitter::Node, src: &Src) {
     println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
     println!("val: {}", node_value(node, src));
@@ -61,8 +61,8 @@ fn col(node: &Node) -> usize {
     return p.column;
 }
 
-fn node_value(node: &Node, src: &String) -> String {
-    if let Ok(val) = node.utf8_text(src.as_bytes()) {
+fn node_value(node: &Node, src: &Src) -> String {
+    if let Ok(val) = node.utf8_text(src.src_str.as_bytes()) {
         return val.to_string();
     }
     return "".to_string();
@@ -89,7 +89,7 @@ fn is_symbol_defined(
 fn analyse(
     ctx: &Ctx,
     node: &Node,
-    src: &String,
+    src: &Src,
     env: &Vec<String>,
     idtype: &str,
 ) -> Option<UndefVar> {
@@ -126,7 +126,7 @@ fn analyse(
 fn unex(node: &Node) {
     panic!("Unexpected kind {}", node.kind())
 }
-fn toplevel_symbol(node: &Node, src: &String) -> Vec<String> {
+fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
         "const_declaration" => {
@@ -207,7 +207,7 @@ fn toplevel_symbol(node: &Node, src: &String) -> Vec<String> {
 fn scoped_eval(
     ctx: &mut Ctx,
     node: &Node,
-    src: &String,
+    src: &Src,
     env: &Vec<String>,
     result: &mut Vec<UndefVar>,
     skip: usize,
@@ -338,7 +338,7 @@ fn scoped_eval(
     }
 }
 
-fn eval(ctx: &mut Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<UndefVar> {
+fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
     //    print_node(&node, src);
     match node.kind() {
@@ -627,7 +627,13 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<Unde
     return result;
 }
 
-fn include_node(child: &Node, src: &String) -> Option<Tree> {
+#[derive(Debug)]
+struct Src {
+    src_str: String,
+    src_path: String,
+}
+
+fn include_node(child: &Node, src: &Src) -> Option<Tree> {
     if child.kind() == "call_expression" {
         if let Some(fname) = child.named_child(0) {
             if fname.kind() == "identifier" {
@@ -641,8 +647,9 @@ fn include_node(child: &Node, src: &String) -> Option<Tree> {
                                 path.push_str(
                                     node_value(&filepath, src).as_str().trim_matches('"'),
                                 );
-                                let src = load_jl_file(&path);
-                                let tree = parse_node(src.as_str());
+                                let newsrc = load_jl_file(&path);
+                                let src = Src {src_str: newsrc, src_path: path};
+                                let tree = parse_node(&src);
                                 return Some(tree);
                             }
                         } else {
@@ -659,7 +666,7 @@ fn include_node(child: &Node, src: &String) -> Option<Tree> {
     return None;
 }
 
-fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String) -> Module {
+fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -> Module {
     let mut tc = root_node.walk();
     let mut symbols = Symbols {
         exported: vec![],
@@ -740,15 +747,15 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String
     return current_mod;
 }
 
-fn parse_node(src: &str) -> Tree {
+fn parse_node(src: &Src) -> Tree {
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
-    let tree = parser.parse(src, None).unwrap();
+    let tree = parser.parse(&src.src_str, None).unwrap();
     return tree;
 }
 
-fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let tree = parse_node(src);
     let root_node = tree.root_node();
     let mut result: Vec<UndefVar> = vec![];
@@ -760,10 +767,10 @@ fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
         },
         children: vec![],
     };
-    let modtree = construct_module_tree(default_module, &root_node, &String::from(src));
+    let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
-    scoped_eval(ctx, &root_node, &String::from(src), env, &mut result, 0);
+    scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
 
@@ -812,6 +819,7 @@ fn main() {
         default_env: env,
     };
     let localenv = Vec::<String>::new();
+    let src = Src {src_str: src, src_path: "test.jl".to_string()};
     let linfo = lint(&mut ctx, &src, &localenv);
     for err in linfo {
         println!(
@@ -827,7 +835,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_if() {
-        let source_code = r#"
+        let snip = r#"
          if x
             y = 10
             x = z + 1
@@ -847,6 +855,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
@@ -868,7 +877,7 @@ mod tests {
     }
     #[test]
     fn test_let() {
-        let source_code = r#"
+        let snip = r#"
          let x
             x
             z
@@ -882,6 +891,7 @@ mod tests {
             default_env: vec![],
         };
 
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
@@ -890,7 +900,7 @@ mod tests {
     }
     #[test]
     fn test_callexp() {
-        let source_code = r#"
+        let snip = r#"
          z(x)
          "#;
         let env = vec!["x".to_string()];
@@ -900,6 +910,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
 
         let one = errs.remove(0);
@@ -914,7 +925,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
-
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
 
         let one = errs.remove(0);
@@ -930,7 +941,7 @@ mod tests {
     }
     #[test]
     fn test_func() {
-        let source_code = r#"
+        let snip = r#"
          module Test
          function hello(x)
             y
@@ -944,6 +955,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 0);
         let env: Vec<String> = vec![];
@@ -953,6 +965,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -962,7 +975,7 @@ mod tests {
     }
     #[test]
     fn test_oneline_func() {
-        let source_code = r#"
+        let snip = r#"
         f(x, y) = f(x, y-1)+1
         "#;
         let env: Vec<String> = vec![];
@@ -972,12 +985,13 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 0);
     }
     #[test]
     fn test_assign_subscript() {
-        let source_code = r#"
+        let snip = r#"
            RG[]["ds"] = "d"
         "#;
         let env: Vec<String> = vec![];
@@ -987,6 +1001,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -996,7 +1011,7 @@ mod tests {
     }
     #[test]
     fn test_try() {
-        let source_code = r#"
+        let snip = r#"
         try
             x = 1
             x = x + 1
@@ -1015,6 +1030,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
@@ -1032,7 +1048,7 @@ mod tests {
     }
     #[test]
     fn test_module_imp() {
-        let source_code = r#"
+        let snip = r#"
          module X
           import A
           import A: c, v
@@ -1053,6 +1069,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         println!("errs {:?}", errs);
         assert_eq!(errs.len(), 1);
@@ -1064,7 +1081,7 @@ mod tests {
     }
     #[test]
     fn test_struct() {
-        let source_code = r#"
+        let snip = r#"
         abstract type Animal end
         struct Typee <: Animal
            Y::Int
@@ -1082,6 +1099,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         println!("{:?}", errs);
         assert_eq!(errs.len(), 2);
@@ -1096,7 +1114,7 @@ mod tests {
     }
     #[test]
     fn test_doclause() {
-        let source_code = r#"
+        let snip = r#"
         test(x, y) do z
            z
            y
@@ -1110,6 +1128,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
@@ -1127,7 +1146,7 @@ mod tests {
     }
     #[test]
     fn test_typedassign() {
-        let source_code = r#"
+        let snip = r#"
          x::Animal = 1
          x
         "#;
@@ -1138,6 +1157,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -1147,7 +1167,7 @@ mod tests {
     }
     #[test]
     fn test_oneline_func_typed() {
-        let source_code = r#"
+        let snip = r#"
            f(x::Int, y)=1
         "#;
         let env: Vec<String> = vec![];
@@ -1157,6 +1177,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -1166,7 +1187,7 @@ mod tests {
     }
     #[test]
     fn test_call_typed() {
-        let source_code = r#"
+        let snip = r#"
         f(y, x::Int, y=1, j=2; k=1, m=2)
         "#;
         let env: Vec<String> = vec![];
@@ -1176,6 +1197,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
@@ -1197,7 +1219,7 @@ mod tests {
     }
     #[test]
     fn test_func_typed() {
-        let source_code = r#"
+        let snip = r#"
            function f(x::Int, y=1, j::Int=2; k=1, m::Int2=2)
               x
               y
@@ -1212,6 +1234,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
@@ -1233,7 +1256,7 @@ mod tests {
     }
     #[test]
     fn test_parameterized_ids() {
-        let source_code = r#"
+        let snip = r#"
         function main(x::Vector{<:Unit})
             y::Vector{Unit2}
             k::Vector{<:AbstractString, Int}
@@ -1246,6 +1269,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
 
         assert_eq!(errs.len(), 4);
@@ -1268,7 +1292,7 @@ mod tests {
     }
     #[test]
     fn test_const_declaration() {
-        let source_code = r#"
+        let snip = r#"
         const x = 1
         x
         y
@@ -1283,6 +1307,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
@@ -1300,7 +1325,7 @@ mod tests {
     }
     #[test]
     fn test_field_expression() {
-        let source_code = r#"
+        let snip = r#"
         using X
         X.y
         X.y.x.x()
@@ -1313,6 +1338,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -1322,7 +1348,7 @@ mod tests {
     }
     #[test]
     fn test_macro_expression() {
-        let source_code = r#"
+        let snip = r#"
         macro x()
         end
         macro y_str()
@@ -1339,6 +1365,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
@@ -1352,7 +1379,7 @@ mod tests {
     }
     #[test]
     fn test_function_object() {
-        let source_code = r#"
+        let snip = r#"
         (rx::Object)(x) = rx + x - z
         "#;
         let env: Vec<String> = vec![];
@@ -1362,6 +1389,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
@@ -1375,7 +1403,7 @@ mod tests {
     }
     #[test]
     fn test_comprehension() {
-        let source_code = r#"
+        let snip = r#"
         [x+y for x in 1:100]
         "#;
         let env: Vec<String> = vec![];
@@ -1385,6 +1413,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -1394,7 +1423,7 @@ mod tests {
     }
     #[test]
     fn test_export() {
-        let source_code = r#"
+        let snip = r#"
          export f, g
          f(x)=1
         "#;
@@ -1405,6 +1434,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -1414,7 +1444,7 @@ mod tests {
     }
     #[test]
     fn test_tuple_assign() {
-        let source_code = r#"
+        let snip = r#"
         (x, _) = pair()
         j, _ = pair()
         x
@@ -1428,6 +1458,7 @@ mod tests {
             loaded_modules: vec![],
             default_env: vec![],
         };
+        let source_code = Src {src_str: snip.to_string(), src_path: "<repl>".to_string()};
         let mut errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
