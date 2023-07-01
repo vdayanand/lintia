@@ -530,6 +530,13 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<Unde
         }
         "call_expression" => {
             let mut tc = node.walk();
+            if let Some(tree) = include_node(&node, src) {
+                let root = tree.root_node();
+                let mut tc = root.walk();
+                for child in root.named_children(&mut tc) {
+                    result.extend(eval(ctx, &child, src, &Vec::<String>::new()));
+                }
+            }
             for child in node.named_children(&mut tc) {
                 if child.kind() != "operator" {
                     result.extend(eval(ctx, &child, src, &env));
