@@ -2,7 +2,7 @@ use colored::Colorize;
 use std::fs;
 //use std::rc::Rc;
 use toml::Value;
-use tree_sitter::{Language, Node, Parser};
+use tree_sitter::{Language, Node, Parser, Tree};
 //use std::io::Read;
 
 extern "C" {
@@ -681,7 +681,6 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String
         toplevel: current_mod.symbols.toplevel.to_vec(),
     };
     for child in root_node.named_children(&mut tc) {
-        let mut tc = child.walk();
         let toplevel = toplevel_symbol(&child, src);
         symbols.toplevel.extend_from_slice(&toplevel);
         if child.kind() == "export_statement" {
@@ -721,15 +720,19 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String
     return current_mod;
 }
 
-fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+fn parse_node(src: &str) -> Tree{
     let mut parser = Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
     let tree = parser.parse(src, None).unwrap();
+    return tree;
+}
+
+fn lint(ctx: &mut Ctx, src: &str, env: &Vec<String>) -> Vec<UndefVar> {
+    let tree = parse_node(src);
     let root_node = tree.root_node();
-    let mut tc = root_node.walk();
     let mut result: Vec<UndefVar> = vec![];
-    let mut default_module = Module {
+    let default_module = Module {
         name: "Main".to_string(),
         symbols: Symbols {
             exported: vec![],
