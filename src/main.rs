@@ -37,17 +37,6 @@ struct Ctx {
     default_env: Vec<String>,
 }
 
-//fn read_file_contents(path: &str) -> Result<String, std::io::Error> {
-//   println!("path {}", path);
-//   // Open the file
-//   let mut file = fs::File::open(path)?;
-//
-//   // Read the contents of the file into a string
-//   let mut contents = String::new();
-//   file.read_to_string(&mut contents)?;
-//   Ok(contents)
-//}
-
 fn print_node(node: &tree_sitter::Node, src: &String) {
     println!("Kind: {}", node.kind().cyan());
     println!("has error: {}", node.has_error());
@@ -231,19 +220,6 @@ fn scoped_eval(
         if child.kind() == "elseif_clause" || child.kind() == "else_clause" {
             result.extend(eval(ctx, &child, src, &env));
             continue;
-        }
-        if child.kind() == "call_expression" {
-            if let Some(fname) = child.named_child(0) {
-                if fname.kind() == "identifier" {
-                    let fnameval = node_value(&fname, src);
-                    if fnameval == "include" {
-                        /*      if let Some(lintinfo) = include_toplevel(&child, src, &newenv) {
-                            result.extend(lintinfo.undefvars);
-                            newenv.extend(lintinfo.toplevel);
-                        }*/
-                    }
-                }
-            }
         }
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
@@ -643,18 +619,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &String, env: &Vec<String>) -> Vec<Unde
     }
     return result;
 }
-/*
-fn lint_ex(src: &str, env: &Vec<String>) -> Vec<UndefVar> {
-    let mut parser = Parser::new();
-    let language = unsafe { tree_sitter_julia() };
-    parser.set_language(language).unwrap();
-    let tree = parser.parse(src, None).unwrap();
-    let root_node = tree.root_node();
-    let mut result: Vec<UndefVar> = vec![];
-    scoped_eval(&root_node, &String::from(src), &env, &mut result, 0);
-    return result;
-}
- */
+
 fn include_node(child: &Node, src: &String) -> Option<Tree> {
     if child.kind() == "call_expression" {
         if let Some(fname) = child.named_child(0) {
@@ -737,7 +702,34 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &String
                 src,
             ));
         }
+        if let Some(tree) = include_node(&ele, src) {
+            let root = tree.root_node();
+            let mut tc = root.walk();
+            for ch in root.named_children(&mut tc) {
+                if ch.kind() == "module_definition" {
+                    let module_name = if let Some(module_name) = ch.named_child(0) {
+                        node_value(&module_name, src)
+                    } else {
+                        unex(&ele);
+                        "".to_string()
+                    };
+                    current_mod.children.push(construct_module_tree(
+                        Module {
+                            name: module_name.clone(),
+                            symbols: Symbols {
+                                exported: vec![],
+                                toplevel: vec![module_name.clone()],
+                            },
+                            children: vec![],
+                        },
+                        &ch,
+                        src,
+                    ));
+                }
+            }
+        }
     }
+
     return current_mod;
 }
 
