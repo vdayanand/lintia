@@ -1,5 +1,8 @@
+use clap::{command, Arg};
 use colored::Colorize;
+use std::env;
 use std::fs;
+use std::path::PathBuf;
 //use std::rc::Rc;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
@@ -646,11 +649,15 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                         if fileargs.kind() == "argument_list" {
                             let mut tc = fileargs.walk();
                             for filepath in fileargs.named_children(&mut tc) {
-                                let mut path = String::from("/Users/vdayanand/rs/lintia/");
-                                path.push_str(
-                                    node_value(&filepath, src).as_str().trim_matches('"'),
-                                );
-                                let newsrc = load_jl_file(&path);
+                                let newsrc_path_u = node_value(&filepath, src);
+                                let newsrc_path = newsrc_path_u.as_str().trim_matches('"');
+                                let fullpath = if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
+                                    absolute_path
+                                } else {
+                                    panic!("Failed to get the absolute path");
+                                };
+                                let path = fullpath.to_string_lossy().into_owned();
+                                let newsrc = load_jl_file(&fullpath);
                                 let src = Src {
                                     src_str: newsrc,
                                     src_path: path,
@@ -817,14 +824,40 @@ fn load_env(dir: &str) -> Vec<String> {
     return envs_list;
 }
 
-fn load_jl_file(file: &str) -> String {
-    let jl_str = fs::read_to_string(file).expect("Failed to read file");
+fn load_jl_file(file: &PathBuf) -> String {
+    let jl_str = if let Ok(jl_str) = fs::read_to_string(file) {
+        println!("loaded julia file {:?}", file);
+        jl_str
+    } else {
+        panic!("failed to load julia file {:?}", file);
+    };
     return jl_str;
 }
 
 fn main() {
-    let src = load_jl_file("test.jl");
+    let matches = command!() // requires `cargo` feature
+        .arg(Arg::new("file"))
+        .get_matches();
+
+    if let Ok(current_dir) = env::current_dir() {
+        println!("Current working directory: {:?}", current_dir);
+    } else {
+        eprintln!("Failed to get the current working directory");
+    }
+
+    let file = if let Some(file) = matches.get_one::<String>("file") {
+        if let Ok(absolute_path) = fs::canonicalize(file) {
+            absolute_path
+        } else {
+            panic!("Failed to get the absolute path");
+        }
+    } else {
+        println!("File is missing");
+        return;
+    };
+    let src = load_jl_file(&file);
     let env = load_env("src/pkgs");
+
     let mut ctx = Ctx {
         src_module_root: None,
         current_module: "".to_string(),
