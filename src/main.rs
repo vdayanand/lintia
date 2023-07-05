@@ -533,9 +533,11 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 let newsrc = parseinfo.src;
                 let root = tree.root_node();
                 let mut tc = root.walk();
+                change_pwd(&PathBuf::from(&newsrc.src_path));
                 for child in root.named_children(&mut tc) {
                     result.extend(eval(ctx, &child, &newsrc, &Vec::<String>::new()));
                 }
+                change_pwd(&PathBuf::from(&src.src_path));
             } else {
                 for child in node.named_children(&mut tc) {
                     if child.kind() != "operator" {
@@ -655,7 +657,7 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                                 let fullpath = if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
                                     absolute_path
                                 } else {
-                                    panic!("Failed to get the absolute path");
+                                    panic!("Failed to get the absolute path {} cwd={:?}", newsrc_path, current_pwd());
                                 };
                                 let path = fullpath.to_string_lossy().into_owned();
                                 let newsrc = load_jl_file(&fullpath);
@@ -692,15 +694,18 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
     for child in root_node.named_children(&mut tc) {
         let toplevel = toplevel_symbol(&child, src);
         symbols.toplevel.extend_from_slice(&toplevel);
+
         if let Some(parseinfo) = include_node(&child, src) {
             let tree = parseinfo.tree;
             let newsrc = parseinfo.src;
             let root = tree.root_node();
             let mut tc = root.walk();
+            change_pwd(&PathBuf::from(&newsrc.src_path));
             for child in root.named_children(&mut tc) {
                 let toplevel = toplevel_symbol(&child, &newsrc);
                 symbols.toplevel.extend_from_slice(&toplevel);
             }
+            change_pwd(&PathBuf::from(&src.src_path));
         }
         if child.kind() == "export_statement" {
             let mut tc = child.walk();
@@ -740,6 +745,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
             let newsrc = parseinfo.src;
             let root = tree.root_node();
             let mut tc = root.walk();
+            change_pwd(&PathBuf::from(&newsrc.src_path));
             for ch in root.named_children(&mut tc) {
                 if ch.kind() == "module_definition" {
                     let module_name = if let Some(module_name) = ch.named_child(0) {
@@ -762,6 +768,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
                     ));
                 }
             }
+            change_pwd(&PathBuf::from(&src.src_path));
         }
     }
 
@@ -825,6 +832,20 @@ fn load_env(dir: &str) -> Vec<String> {
     return envs_list;
 }
 
+fn get_env_vec(tomlstr: &str) -> Vec<String> {
+    let parsed_toml: Value = toml::from_str(&tomlstr).expect("Failed to parse TOML");
+    if let Some(envs) = parsed_toml.get("envs") {
+        if let Some(envs_array) = envs.as_array() {
+            return envs_array
+                .iter()
+                .filter_map(|env_value| env_value.as_str().map(String::from))
+                .collect();
+
+        }
+    }
+    return vec![]
+}
+
 fn load_jl_file(file: &PathBuf) -> String {
     let jl_str = if let Ok(jl_str) = fs::read_to_string(file) {
         println!("loaded julia file {:?}", file);
@@ -833,6 +854,16 @@ fn load_jl_file(file: &PathBuf) -> String {
         panic!("failed to load julia file {:?}", file);
     };
     return jl_str;
+}
+
+fn change_pwd(path: &PathBuf) {
+    let newpwd = path.parent().unwrap();
+    println!("Changing pwd to {:?} {:?}", newpwd, path);
+    env::set_current_dir(newpwd).expect("Failed to change directory");
+}
+
+fn current_pwd() -> PathBuf {
+    env::current_dir().unwrap()
 }
 
 fn main() {
@@ -850,26 +881,30 @@ fn main() {
         if let Ok(absolute_path) = fs::canonicalize(file) {
             absolute_path
         } else {
-            panic!("Failed to get the absolute path");
+            panic!("Failed to get the absolute path {} cwd: {:?}", file, current_pwd());
         }
     } else {
         println!("File is missing");
         return;
     };
-
     let src = load_jl_file(&file);
-    let env = load_env("src/pkgs");
-    env::set_current_dir(file.parent().unwrap()).expect("Failed to change directory");
+    //let env = load_env("src/pkgs");
+    let boot_env = include_str!("pkgs/boot.toml");
+    let mut boot_env_list = get_env_vec(boot_env);
+    let base_env = include_str!("pkgs/base.toml");
+    let mut base_env_list = get_env_vec(base_env);
+    boot_env_list.append(&mut base_env_list);
+    change_pwd(&file);
     let mut ctx = Ctx {
         src_module_root: None,
         current_module: "".to_string(),
         loaded_modules: vec![],
-        default_env: env,
+        default_env: boot_env_list,
     };
     let localenv = Vec::<String>::new();
     let src = Src {
         src_str: src,
-        src_path: "test.jl".to_string(),
+        src_path: file.to_string_lossy().into_owned(),
     };
     let linfo = lint(&mut ctx, &src, &localenv);
     for err in linfo {
