@@ -341,6 +341,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
     match node.kind() {
         "string_literal"
         | "boolean_literal"
+        | "float_literal"
         | "character_literal"
         | "integer_literal"
         | "abstract_definition"
@@ -650,7 +651,7 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                             let mut tc = fileargs.walk();
                             for filepath in fileargs.named_children(&mut tc) {
                                 let newsrc_path_u = node_value(&filepath, src);
-                                let newsrc_path = newsrc_path_u.as_str().trim_matches('"');
+                                let newsrc_path = newsrc_path_u.trim_matches('"');
                                 let fullpath = if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
                                     absolute_path
                                 } else {
@@ -855,9 +856,10 @@ fn main() {
         println!("File is missing");
         return;
     };
+
     let src = load_jl_file(&file);
     let env = load_env("src/pkgs");
-
+    env::set_current_dir(file.parent().unwrap()).expect("Failed to change directory");
     let mut ctx = Ctx {
         src_module_root: None,
         current_module: "".to_string(),
