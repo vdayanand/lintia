@@ -225,6 +225,27 @@ fn scoped_eval(
         }
         if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
             syms_function(&child, src, &mut newenv);
+            let mut tc = child.walk();
+            let mut funenv: Vec<String> = vec![];
+            funenv.extend_from_slice(&newenv);
+            for name in child.named_children(&mut tc) {
+                if name.kind() == "where_clause" {
+                    if let Some(ch) = name.named_child(0) {
+                        if ch.kind() == "curly_expression" {
+                            let mut tc = ch.walk();
+                            for c in ch.named_children(&mut tc) {
+                                funenv.push(node_value(&c, src));
+                            }
+                        }
+                        if ch.kind() == "identifier" {
+                            funenv.push(node_value(&ch, src));
+                        }
+                        println!("funenv => {:?}", funenv);
+                    }
+                }
+            }
+            result.extend(eval(ctx, &child, src, &funenv));
+            continue
         }
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
@@ -361,6 +382,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "line_comment"
         | "block_comment"
         | "command_literal"
+        | "where_clause"
         | "quote_expression"
         | "quote_statement"
         | "macro_definition" => (),
@@ -1714,5 +1736,39 @@ mod tests {
         assert_eq!(one.symbol, "Y".to_string());
         assert_eq!(one.row, 1);
         assert_eq!(one.column, 35);
+    }
+    #[test]
+    fn test_where_clause() {
+        let snip = r#"
+        function store_events(fac, events::Vector{EVENT_TYPE}) where {EVENT_TYPE, X}
+            fac
+            EVENT_TYPE
+            X
+            z
+        end
+        EVENT_TYPE
+        "#;
+        let env: Vec<String> = vec!["Vector".to_string()];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: vec![],
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 2);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "z".to_string());
+        assert_eq!(one.row, 5);
+        assert_eq!(one.column, 12);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "EVENT_TYPE".to_string());
+        assert_eq!(two.row, 7);
+        assert_eq!(two.column, 8);
     }
 }
