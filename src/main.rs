@@ -59,6 +59,7 @@ fn row(node: &Node) -> usize {
     let p = node.start_position();
     return p.row;
 }
+
 fn col(node: &Node) -> usize {
     let p = node.start_position();
     return p.column;
@@ -123,6 +124,25 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
 fn unex(node: &Node) {
     panic!("Unexpected kind {}", node.kind())
 }
+
+fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
+    if let Some(fname) = node.named_child(0) {
+        if fname.kind() == "identifier" {
+            syms.push(node_value(&fname, src));
+        } else if fname.kind() == "field_expression" {
+            if let Some(second) = fname.named_child(1) {
+                syms.push(node_value(&second, src));
+            }
+        } else if fname.kind() == "function_object" {
+        } else if fname.kind() == "ERROR" {
+            print_syntax_error(&fname, src);
+        }
+        else {
+            unex(&fname);
+        }
+    }
+}
+
 fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
@@ -155,22 +175,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
             }
         }
         "function_definition" | "short_function_definition" => {
-            if let Some(fname) = node.named_child(0) {
-                if fname.kind() == "identifier" {
-                    syms.push(node_value(&fname, src));
-                } else if fname.kind() == "field_expression" {
-                    if let Some(second) = fname.named_child(1) {
-                        syms.push(node_value(&second, src));
-                    }
-                } else if fname.kind() == "function_object" {
-                } else if fname.kind() == "ERROR" {
-                    print_syntax_error(&fname, src);
-                }
-                else {
-
-                    unex(&fname);
-                }
-            }
+            syms_function(node, src, &mut syms)
         }
         "macro_definition" => {
             if let Some(name) = node.named_child(0) {
@@ -354,6 +359,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "import_statement"
         | "continue_statement"
         | "line_comment"
+        | "block_comment"
         | "command_literal"
         | "quote_expression"
         | "macro_definition" => (),
