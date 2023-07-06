@@ -194,11 +194,17 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "abstract_definition" | "struct_definition" | "module_definition" => {
+        "abstract_definition" | "struct_definition" | "module_definition"  => {
             if let Some(child) = node.named_child(0) {
                 if child.kind() == "identifier" {
                     syms.push(node_value(&child, src));
                 }
+            }
+        }
+        "local_declaration" => {
+            let mut tc = node.walk();
+            for var in node.named_children(&mut tc) {
+                syms.push(node_value(&var, src))
             }
         }
         _ => (),
@@ -339,7 +345,12 @@ fn scoped_eval(
                 newenv.push(node_value(&first, src));
             }
         }
-
+        if child.kind() == "local_declaration"{
+            let mut tc = child.walk();
+            for var in child.named_children(&mut tc) {
+                newenv.push(node_value(&var, src))
+            }
+        }
         if child.kind() == "for_binding" {
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
@@ -385,6 +396,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "where_clause"
         | "quote_expression"
         | "quote_statement"
+        | "local_declaration"
         | "macro_definition" => (),
 
         "function_definition"
