@@ -362,6 +362,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "block_comment"
         | "command_literal"
         | "quote_expression"
+        | "quote_statement"
         | "macro_definition" => (),
 
         "function_definition"
@@ -374,6 +375,21 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "variable_declaration" | "for_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(ctx, &rhs, src, env))
+            }
+        }
+        "where_expression" => {
+            let mut newenv = Vec::<String>::new();
+            newenv.extend_from_slice(&env);
+
+            if let Some(defs) = node.named_child(1) {
+                if defs.kind() == "identifier" {
+                    newenv.push(node_value(&defs, src));
+                } else {
+                    unex(&defs);
+                }
+            }
+            if let Some(body) = node.named_child(0) {
+                result.extend(eval(ctx, &body, src, &newenv))
             }
         }
         "function_object" => {
@@ -636,8 +652,14 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &child, src, &env));
             }
         }
-        "curly_expression" | "type_clause" => {
+        "type_clause" => {
             if let Some(typenode) = node.named_child(0) {
+                result.extend(eval(ctx, &typenode, src, &env));
+            }
+        }
+        "curly_expression" => {
+            let mut tc = node.walk();
+            for typenode in node.named_children(&mut tc) {
                 result.extend(eval(ctx, &typenode, src, &env));
             }
         }
@@ -649,7 +671,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             print_syntax_error(node, src);
         }
         _ => {
-            print_node(&node.parent().unwrap(), src);
+            print_node(&node, src);
             panic!("Unimplemented kind {}", node.kind());
         }
     }
@@ -1669,5 +1691,28 @@ mod tests {
         assert_eq!(one.symbol, "y".to_string());
         assert_eq!(one.row, 4);
         assert_eq!(one.column, 8);
+    }
+    #[test]
+    fn test_where_exp() {
+        let snip = r#"
+        const T1 = Array{Array{T,N,Y} where T where N, 1}
+        "#;
+        let env: Vec<String> = vec!["Array".to_string()];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: vec![],
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "Y".to_string());
+        assert_eq!(one.row, 1);
+        assert_eq!(one.column, 35);
     }
 }
