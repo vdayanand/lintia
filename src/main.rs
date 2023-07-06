@@ -163,8 +163,11 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                         syms.push(node_value(&second, src));
                     }
                 } else if fname.kind() == "function_object" {
-                } else {
-                    print_node(&fname, src);
+                } else if fname.kind() == "ERROR" {
+                    print_syntax_error(&fname, src);
+                }
+                else {
+
                     unex(&fname);
                 }
             }
@@ -333,6 +336,9 @@ fn scoped_eval(
         }
         result.extend(eval(ctx, &child, src, &newenv));
     }
+}
+fn print_syntax_error(node: &Node, src: &Src) {
+    panic!("Syntax Error at line {} in {}", row(node)+1, src.src_path)
 }
 
 fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
@@ -622,6 +628,9 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "else_clause" => scoped_eval(ctx, &node, src, env, &mut result, 0),
 
         "if_statement" => scoped_eval(ctx, &node, src, env, &mut result, 0),
+        "ERROR" => {
+            print_syntax_error(node, src);
+        }
         _ => {
             print_node(&node.parent().unwrap(), src);
             panic!("Unimplemented kind {}", node.kind());
