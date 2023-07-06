@@ -226,6 +226,9 @@ fn scoped_eval(
             result.extend(eval(ctx, &child, src, &env));
             continue;
         }
+        if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
+            syms_function(&child, src, &mut newenv);
+        }
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
             for param in child.named_children(&mut tc) {
@@ -1057,6 +1060,9 @@ mod tests {
         let snip = r#"
          module Test
          function hello(x)
+            function test()
+            end
+            test()
             y
          end
          end
@@ -1089,7 +1095,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 6);
         assert_eq!(one.column, 12);
     }
     #[test]
