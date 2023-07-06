@@ -136,8 +136,7 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
         } else if fname.kind() == "function_object" {
         } else if fname.kind() == "ERROR" {
             print_syntax_error(&fname, src);
-        }
-        else {
+        } else {
             unex(&fname);
         }
     }
@@ -174,9 +173,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "function_definition" | "short_function_definition" => {
-            syms_function(node, src, &mut syms)
-        }
+        "function_definition" | "short_function_definition" => syms_function(node, src, &mut syms),
         "macro_definition" => {
             if let Some(name) = node.named_child(0) {
                 let mut b = String::from("@");
@@ -346,7 +343,7 @@ fn scoped_eval(
     }
 }
 fn print_syntax_error(node: &Node, src: &Src) {
-    panic!("Syntax Error at line {} in {}", row(node)+1, src.src_path)
+    panic!("Syntax Error at line {} in {}", row(node) + 1, src.src_path)
 }
 
 fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
@@ -440,6 +437,17 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     }
                 } else if field.kind() == "type_clause" {
                     result.extend(eval(ctx, &field, src, &env));
+                } else if field.kind() == "function_definition"
+                    || field.kind() == "short_function_definition"
+                {
+                    let mut newenv: Vec<String> = vec![];
+                    newenv.extend_from_slice(env);
+                    if let Some(fname) = node.named_child(0) {
+                        newenv.push(node_value(&fname, src));
+                        newenv.push("new".to_string());
+                    }
+                    result.extend(eval(ctx, &field, src, &newenv));
+                } else if field.kind() == "line_comment" || field.kind() == "block_comment" {
                 } else {
                     unex(&field);
                 }
@@ -672,11 +680,16 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                             for filepath in fileargs.named_children(&mut tc) {
                                 let newsrc_path_u = node_value(&filepath, src);
                                 let newsrc_path = newsrc_path_u.trim_matches('"');
-                                let fullpath = if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
-                                    absolute_path
-                                } else {
-                                    panic!("Failed to get the absolute path {} cwd={:?}", newsrc_path, current_pwd());
-                                };
+                                let fullpath =
+                                    if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
+                                        absolute_path
+                                    } else {
+                                        panic!(
+                                            "Failed to get the absolute path {} cwd={:?}",
+                                            newsrc_path,
+                                            current_pwd()
+                                        );
+                                    };
                                 let path = fullpath.to_string_lossy().into_owned();
                                 let newsrc = load_jl_file(&fullpath);
                                 let src = Src {
@@ -858,10 +871,9 @@ fn get_env_vec(tomlstr: &str) -> Vec<String> {
                 .iter()
                 .filter_map(|env_value| env_value.as_str().map(String::from))
                 .collect();
-
         }
     }
-    return vec![]
+    return vec![];
 }
 
 fn load_jl_file(file: &PathBuf) -> String {
@@ -899,7 +911,11 @@ fn main() {
         if let Ok(absolute_path) = fs::canonicalize(file) {
             absolute_path
         } else {
-            panic!("Failed to get the absolute path {} cwd: {:?}", file, current_pwd());
+            panic!(
+                "Failed to get the absolute path {} cwd: {:?}",
+                file,
+                current_pwd()
+            );
         }
     } else {
         println!("File is missing");
@@ -1221,12 +1237,17 @@ mod tests {
         let snip = r#"
         abstract type Animal end
         struct Typee <: Animal
-           Y::Int
-           Z
+            Y::Int
+            Z
+            Typee(U)=new(1,2)
+            function Typee(U)
+                x
+                new(1,2)
+            end
         end
         struct Typee2 <: Animal2
-           T
-           M
+            T
+            M
         end
         "#;
         let env: Vec<String> = vec![];
@@ -1242,15 +1263,19 @@ mod tests {
         };
         let mut errs = lint(&mut ctx, &source_code, &env);
         println!("{:?}", errs);
-        assert_eq!(errs.len(), 2);
+        assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
         assert_eq!(one.row, 3);
-        assert_eq!(one.column, 14);
+        assert_eq!(one.column, 15);
         let two = errs.remove(0);
-        assert_eq!(two.symbol, "Animal2".to_string());
-        assert_eq!(two.row, 6);
-        assert_eq!(two.column, 25);
+        assert_eq!(two.symbol, "x".to_string());
+        assert_eq!(two.row, 7);
+        assert_eq!(two.column, 16);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "Animal2".to_string());
+        assert_eq!(three.row, 11);
+        assert_eq!(three.column, 25);
     }
     #[test]
     fn test_doclause() {
