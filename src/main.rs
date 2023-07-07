@@ -17,6 +17,7 @@ struct UndefVar {
     symbol: String,
     row: usize,
     column: usize,
+    filepath: String
 }
 
 #[derive(Debug)]
@@ -118,6 +119,7 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
         symbol: sym,
         row: r,
         column: c,
+        filepath: src.src_path.clone()
     });
 }
 
@@ -405,7 +407,6 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "quote_expression"
         | "quote_statement"
         | "local_declaration"
-        | "global_declaration"
         | "macro_definition" => (),
 
         "function_definition"
@@ -475,7 +476,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &macro_arg, src, env));
             }
         }
-        "parenthesized_expression" | "global_declaration" | "slurp_parameter" => {
+        "parenthesized_expression" | "global_declaration" | "slurp_parameter" | "interpolation_expression"=> {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
             }
@@ -924,36 +925,6 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     return result;
 }
 
-fn load_env(dir: &str) -> Vec<String> {
-    // Read the directory
-    let entries = fs::read_dir(dir).expect("Failed to read directory");
-    let mut envs_list = Vec::<String>::new();
-    // Iterate over the directory entries
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if let Some(extension) = path.extension() {
-                if extension == "toml" {
-                    if let Ok(contents) = fs::read_to_string(&path) {
-                        let parsed_toml: Value =
-                            toml::from_str(&contents).expect("Failed to parse TOML");
-                        if let Some(envs) = parsed_toml.get("envs") {
-                            if let Some(envs_array) = envs.as_array() {
-                                let envs_vec: Vec<String> = envs_array
-                                    .iter()
-                                    .filter_map(|env_value| env_value.as_str().map(String::from))
-                                    .collect();
-                                envs_list.extend_from_slice(&envs_vec);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return envs_list;
-}
-
 fn get_env_vec(tomlstr: &str) -> Vec<String> {
     let parsed_toml: Value = toml::from_str(&tomlstr).expect("Failed to parse TOML");
     if let Some(envs) = parsed_toml.get("envs") {
@@ -1034,10 +1005,11 @@ fn main() {
     let linfo = lint(&mut ctx, &src, &localenv);
     for err in linfo {
         println!(
-            "Undefined symbol {} found at {}:{} ",
+            "Undefined symbol {} found at row:{} col:{} in {}",
             err.symbol.red(),
             err.row,
-            err.column
+            err.column,
+            err.filepath
         );
     }
 }
