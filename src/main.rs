@@ -195,7 +195,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "abstract_definition" | "struct_definition" | "module_definition"  => {
+        "abstract_definition" | "struct_definition" | "module_definition" => {
             if let Some(child) = node.named_child(0) {
                 if child.kind() == "identifier" {
                     syms.push(node_value(&child, src));
@@ -212,7 +212,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     }
     return syms;
 }
-fn sym_for_binding(node: &Node, src: &Src, env: &mut Vec<String>){
+fn sym_for_binding(node: &Node, src: &Src, env: &mut Vec<String>) {
     if let Some(lhs) = node.named_child(0) {
         if lhs.kind() == "identifier" {
             env.push(node_value(&lhs, src));
@@ -271,7 +271,7 @@ fn scoped_eval(
                 }
             }
             result.extend(eval(ctx, &child, src, &funenv));
-            continue
+            continue;
         }
         if child.kind() == "parameter_list" {
             let mut tc = child.walk();
@@ -361,7 +361,6 @@ fn scoped_eval(
                 }
             }
         }
-
         if child.kind() == "catch_clause" {
             break;
         }
@@ -377,7 +376,7 @@ fn scoped_eval(
             }
         }
         if child.kind() == "for_binding" {
-            sym_for_binding(node, src, &mut newenv);
+            sym_for_binding(&child, src, &mut newenv);
         }
         result.extend(eval(ctx, &child, src, &newenv));
     }
@@ -411,7 +410,6 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
 
         "function_definition"
         | "let_statement"
-        | "for_statement"
         | "while_statement"
         | "short_function_definition"
         | "compound_statement"
@@ -420,6 +418,9 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(ctx, &rhs, src, env))
             }
+        }
+        "for_statement" => {
+            scoped_eval(ctx, &node, src, &env, &mut result, 0);
         }
         "where_expression" => {
             let mut newenv = Vec::<String>::new();
@@ -625,8 +626,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     if let Some(name) = child.named_child(0) {
                         result.extend(eval(ctx, &name, src, &newenv));
                     }
-                }
-                else if child.kind() != "operator" {
+                } else if child.kind() != "operator" {
                     result.extend(eval(ctx, &child, src, &newenv));
                 }
             }
@@ -1828,7 +1828,11 @@ mod tests {
          local Dict
          Dict(string(k) => nothing for (k, v) in pairs(tab))
         "#;
-        let env: Vec<String> = vec!["string".to_string(), "pairs".to_string(), "nothing".to_string()];
+        let env: Vec<String> = vec![
+            "string".to_string(),
+            "pairs".to_string(),
+            "nothing".to_string(),
+        ];
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
@@ -1846,5 +1850,46 @@ mod tests {
         assert_eq!(one.symbol, "tab".to_string());
         assert_eq!(one.row, 2);
         assert_eq!(one.column, 55);
+    }
+    #[test]
+    fn test_for_bind() {
+        let snip = r#"
+        for x in 1:100
+             x
+             y
+        end
+        x
+        for (x, y) in 1:100
+             x
+             y
+        end
+        y
+        "#;
+        let env: Vec<String> = vec![];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: vec![],
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 3);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 3);
+        assert_eq!(one.column, 13);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "x".to_string());
+        assert_eq!(two.row, 5);
+        assert_eq!(two.column, 8);
+        let three = errs.remove(0);
+        assert_eq!(three.symbol, "y".to_string());
+        assert_eq!(three.row, 10);
+        assert_eq!(three.column, 8);
     }
 }
