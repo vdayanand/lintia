@@ -906,6 +906,21 @@ fn parse_node(src: &Src) -> Tree {
     return tree;
 }
 
+fn module_from_file(modname: &str, file: &PathBuf) -> Module {
+    let content = load_jl_file(file);
+    let src = Src {src_str: content, src_path: file.to_string_lossy().into_owned()};
+    let tree = parse_node(&src);
+    let root_node = tree.root_node();
+    let default_module = Module {
+        name: modname.to_string(),
+        symbols: Symbols {
+            exported: vec![],
+            toplevel: vec!["Main".to_string()],
+        },
+        children: vec![],
+    };
+    return construct_module_tree(default_module, &root_node, &src)
+}
 fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let tree = parse_node(src);
     let root_node = tree.root_node();
@@ -921,6 +936,8 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
+    let uuidmod = module_from_file("UUIDs", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
+    ctx.loaded_modules.push(uuidmod);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
