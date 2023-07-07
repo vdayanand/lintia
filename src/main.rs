@@ -133,10 +133,11 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
             if let Some(second) = fname.named_child(1) {
                 syms.push(node_value(&second, src));
             }
-        } else if fname.kind() == "function_object" {
+        } else if fname.kind() == "function_object" || fname.kind() == "parameter_list" {
         } else if fname.kind() == "ERROR" {
             print_syntax_error(&fname, src);
         } else {
+            print_node(&node, src);
             unex(&fname);
         }
     }
@@ -353,6 +354,11 @@ fn scoped_eval(
                 if args.kind() == "identifier" {
                     newenv.push(node_value(&args, src));
                 }
+                if args.kind() == "let_binding" {
+                    if let Some(name) = args.named_child(0) {
+                        newenv.push(node_value(&name, src));
+                    }
+                }
             }
         }
 
@@ -410,7 +416,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "short_function_definition"
         | "compound_statement"
         | "finally_clause" => scoped_eval(ctx, node, src, env, &mut result, 0),
-        "variable_declaration" | "for_binding" => {
+        "variable_declaration" | "for_binding" | "let_binding" => {
             if let Some(rhs) = node.named_child(1) {
                 result.extend(eval(ctx, &rhs, src, env))
             }
@@ -525,6 +531,8 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "spread_expression"
         | "splat_expression"
         | "array_expression"
+        | "matrix_expression"
+        | "matrix_row"
         | "macro_argument_list"
         | "bare_tuple"
         | "pair_expression"
@@ -683,8 +691,11 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
         }
         "named_argument" => {
-            if let Some(rnode) = node.named_child(1) {
-                result.extend(eval(ctx, &rnode, src, env));
+            let mut tc = node.walk();
+            for name in node.named_children(&mut tc).skip(1) {
+                if name.kind() != "operator" {
+                    result.extend(eval(ctx, &name, src, env));
+                }
             }
         }
 
@@ -1082,6 +1093,10 @@ mod tests {
     fn test_let() {
         let snip = r#"
          let x
+            x
+            z
+         end
+         let x=1
             x
             z
          end
