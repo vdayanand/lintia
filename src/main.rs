@@ -387,6 +387,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "string_literal"
         | "boolean_literal"
         | "float_literal"
+        | "break_statement"
         | "character_literal"
         | "integer_literal"
         | "abstract_definition"
