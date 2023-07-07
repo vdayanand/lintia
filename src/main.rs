@@ -57,7 +57,7 @@ fn print_node(node: &tree_sitter::Node, src: &Src) {
 
 fn row(node: &Node) -> usize {
     let p = node.start_position();
-    return p.row;
+    return p.row+1;
 }
 
 fn col(node: &Node) -> usize {
@@ -1073,20 +1073,20 @@ mod tests {
         let mut errs = lint(&mut ctx, &source_code, &env);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 4);
         assert_eq!(one.column, 16);
 
         let two = errs.remove(0);
         assert_eq!(two.symbol, "m".to_string());
-        assert_eq!(two.row, 6);
+        assert_eq!(two.row, 7);
         assert_eq!(two.column, 12);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "y".to_string());
-        assert_eq!(three.row, 7);
+        assert_eq!(three.row, 8);
         assert_eq!(three.column, 16);
         let four = errs.remove(0);
         assert_eq!(four.symbol, "y".to_string());
-        assert_eq!(four.row, 8);
+        assert_eq!(four.row, 9);
         assert_eq!(four.column, 14);
     }
     #[test]
@@ -1116,7 +1116,7 @@ mod tests {
         let mut errs = lint(&mut ctx, &source_code, &env);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 4);
         assert_eq!(one.column, 12);
     }
     #[test]
@@ -1140,7 +1140,7 @@ mod tests {
         let one = errs.remove(0);
         assert_eq!(errs.len(), 0);
         assert_eq!(one.symbol, "z".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 9);
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
@@ -1158,12 +1158,12 @@ mod tests {
         let one = errs.remove(0);
         assert_eq!(errs.len(), 1);
         assert_eq!(one.symbol, "z".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 9);
         let two = errs.remove(0);
         assert_eq!(errs.len(), 0);
         assert_eq!(two.symbol, "x".to_string());
-        assert_eq!(two.row, 1);
+        assert_eq!(two.row, 2);
         assert_eq!(two.column, 11);
     }
     #[test]
@@ -1206,7 +1206,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 6);
+        assert_eq!(one.row, 7);
         assert_eq!(one.column, 12);
     }
     #[test]
@@ -1248,7 +1248,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "RG".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 11);
     }
     #[test]
@@ -1280,15 +1280,15 @@ mod tests {
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 4);
+        assert_eq!(one.row, 5);
         assert_eq!(one.column, 12);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "x".to_string());
-        assert_eq!(two.row, 6);
+        assert_eq!(two.row, 7);
         assert_eq!(two.column, 12);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "zx".to_string());
-        assert_eq!(three.row, 9);
+        assert_eq!(three.row, 10);
         assert_eq!(three.column, 12);
     }
     #[test]
@@ -1324,7 +1324,7 @@ mod tests {
 
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
-        assert_eq!(one.row, 10);
+        assert_eq!(one.row, 11);
         assert_eq!(one.column, 10);
     }
     #[test]
@@ -1361,15 +1361,15 @@ mod tests {
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 4);
         assert_eq!(one.column, 15);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "x".to_string());
-        assert_eq!(two.row, 7);
+        assert_eq!(two.row, 8);
         assert_eq!(two.column, 16);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "Animal2".to_string());
-        assert_eq!(three.row, 11);
+        assert_eq!(three.row, 12);
         assert_eq!(three.column, 25);
     }
     #[test]
@@ -1396,15 +1396,15 @@ mod tests {
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 16);
         let second = errs.remove(0);
         assert_eq!(second.symbol, "y".to_string());
-        assert_eq!(second.row, 3);
+        assert_eq!(second.row, 4);
         assert_eq!(second.column, 11);
         let second = errs.remove(0);
         assert_eq!(second.symbol, "t".to_string());
-        assert_eq!(second.row, 4);
+        assert_eq!(second.row, 5);
         assert_eq!(second.column, 11);
     }
     #[test]
@@ -1428,7 +1428,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Animal".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 12);
     }
     #[test]
@@ -1451,7 +1451,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 16);
     }
     #[test]
@@ -1474,19 +1474,19 @@ mod tests {
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 8);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "y".to_string());
-        assert_eq!(two.row, 1);
+        assert_eq!(two.row, 2);
         assert_eq!(two.column, 10);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "x".to_string());
-        assert_eq!(three.row, 1);
+        assert_eq!(three.row, 2);
         assert_eq!(three.column, 13);
         let four = errs.remove(0);
         assert_eq!(four.symbol, "Int".to_string());
-        assert_eq!(four.row, 1);
+        assert_eq!(four.row, 2);
         assert_eq!(four.column, 16);
     }
     #[test]
@@ -1514,19 +1514,19 @@ mod tests {
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 25);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "Int".to_string());
-        assert_eq!(two.row, 1);
+        assert_eq!(two.row, 2);
         assert_eq!(two.column, 38);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "Int2".to_string());
-        assert_eq!(three.row, 1);
+        assert_eq!(three.row, 2);
         assert_eq!(three.column, 53);
         let four = errs.remove(0);
         assert_eq!(four.symbol, "z".to_string());
-        assert_eq!(four.row, 4);
+        assert_eq!(four.row, 5);
         assert_eq!(four.column, 14);
     }
     #[test]
@@ -1553,19 +1553,19 @@ mod tests {
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Unit".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 34);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "Unit2".to_string());
-        assert_eq!(two.row, 2);
+        assert_eq!(two.row, 3);
         assert_eq!(two.column, 22);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "k".to_string());
-        assert_eq!(three.row, 3);
+        assert_eq!(three.row, 4);
         assert_eq!(three.column, 12);
         let four = errs.remove(0);
         assert_eq!(four.symbol, "AbstractString".to_string());
-        assert_eq!(four.row, 3);
+        assert_eq!(four.row, 4);
         assert_eq!(four.column, 24);
     }
     #[test]
@@ -1593,15 +1593,15 @@ mod tests {
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 4);
         assert_eq!(one.column, 8);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "Int".to_string());
-        assert_eq!(two.row, 4);
+        assert_eq!(two.row, 5);
         assert_eq!(two.column, 17);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "k".to_string());
-        assert_eq!(three.row, 5);
+        assert_eq!(three.row, 6);
         assert_eq!(three.column, 8);
     }
     #[test]
@@ -1627,7 +1627,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Z".to_string());
-        assert_eq!(one.row, 4);
+        assert_eq!(one.row, 5);
         assert_eq!(one.column, 8);
     }
     #[test]
@@ -1657,11 +1657,11 @@ mod tests {
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 5);
+        assert_eq!(one.row, 6);
         assert_eq!(one.column, 8);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "x".to_string());
-        assert_eq!(two.row, 7);
+        assert_eq!(two.row, 8);
         assert_eq!(two.column, 8);
     }
     #[test]
@@ -1684,11 +1684,11 @@ mod tests {
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Object".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 13);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "z".to_string());
-        assert_eq!(two.row, 1);
+        assert_eq!(two.row, 2);
         assert_eq!(two.column, 35);
     }
     #[test]
@@ -1711,7 +1711,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 11);
     }
     #[test]
@@ -1735,7 +1735,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "g".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 19);
     }
     #[test]
@@ -1762,7 +1762,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 4);
+        assert_eq!(one.row, 5);
         assert_eq!(one.column, 8);
     }
     #[test]
@@ -1785,7 +1785,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Y".to_string());
-        assert_eq!(one.row, 1);
+        assert_eq!(one.row, 2);
         assert_eq!(one.column, 35);
     }
     #[test]
@@ -1815,11 +1815,11 @@ mod tests {
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
-        assert_eq!(one.row, 5);
+        assert_eq!(one.row, 6);
         assert_eq!(one.column, 12);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "EVENT_TYPE".to_string());
-        assert_eq!(two.row, 7);
+        assert_eq!(two.row, 8);
         assert_eq!(two.column, 8);
     }
     #[test]
@@ -1848,7 +1848,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "tab".to_string());
-        assert_eq!(one.row, 2);
+        assert_eq!(one.row, 3);
         assert_eq!(one.column, 55);
     }
     #[test]
@@ -1881,15 +1881,15 @@ mod tests {
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 3);
+        assert_eq!(one.row, 4);
         assert_eq!(one.column, 13);
         let two = errs.remove(0);
         assert_eq!(two.symbol, "x".to_string());
-        assert_eq!(two.row, 5);
+        assert_eq!(two.row, 6);
         assert_eq!(two.column, 8);
         let three = errs.remove(0);
         assert_eq!(three.symbol, "y".to_string());
-        assert_eq!(three.row, 10);
+        assert_eq!(three.row, 11);
         assert_eq!(three.column, 8);
     }
 }
