@@ -2,11 +2,13 @@ use clap::{command, Arg};
 use colored::Colorize;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-//use std::rc::Rc;
+use std::collections::HashMap;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
-//use std::io::Read;
+use serde::{Serialize, Deserialize};
+use serde_json;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -20,14 +22,14 @@ struct UndefVar {
     filepath: String
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Module {
     name: String,
     symbols: Symbols,
     children: Vec<Module>,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Symbols {
     exported: Vec<String>,
     toplevel: Vec<String>,
@@ -37,7 +39,7 @@ struct Symbols {
 struct Ctx {
     src_module_root: Option<Module>,
     current_module: String,
-    loaded_modules: Vec<Module>,
+    loaded_modules: HashMap<String, Module>,
     default_env: Vec<String>,
 }
 
@@ -911,7 +913,7 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     let src = Src {src_str: content, src_path: file.to_string_lossy().into_owned()};
     let tree = parse_node(&src);
     let root_node = tree.root_node();
-    let default_module = Module {
+    let main_module = Module {
         name: modname.to_string(),
         symbols: Symbols {
             exported: vec![],
@@ -919,7 +921,13 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
         },
         children: vec![],
     };
-    return construct_module_tree(default_module, &root_node, &src)
+    return construct_module_tree(main_module, &root_node, &src)
+}
+fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
+    let mut file_handle = fs::File::create(file)?;
+    file_handle.write_all(content.as_bytes())?;
+    file_handle.flush()?;
+    Ok(())
 }
 fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let tree = parse_node(src);
@@ -936,8 +944,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
-    let uuidmod = module_from_file("UUIDs", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
-    ctx.loaded_modules.push(uuidmod);
+    let uuidmod = module_from_file("Main", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
+    let json = serde_json::to_string(&uuidmod).unwrap();
+    _ = write_file(&PathBuf::from("/Users/vdayanand/rs/lintia/test.json"), &json);
+    ctx.loaded_modules.insert("UUID".to_string(),  uuidmod);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
@@ -1011,7 +1021,7 @@ fn main() {
     let mut ctx = Ctx {
         src_module_root: None,
         current_module: "".to_string(),
-        loaded_modules: vec![],
+        loaded_modules: HashMap::new(),
         default_env: boot_env_list,
     };
     let localenv = Vec::<String>::new();
