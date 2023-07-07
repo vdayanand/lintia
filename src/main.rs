@@ -201,7 +201,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "local_declaration" => {
+        "local_declaration" | "global_declaration" => {
             let mut tc = node.walk();
             for var in node.named_children(&mut tc) {
                 syms.push(node_value(&var, src))
@@ -211,7 +211,26 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     }
     return syms;
 }
-
+fn sym_for_binding(node: &Node, src: &Src, env: &mut Vec<String>){
+    if let Some(lhs) = node.named_child(0) {
+        if lhs.kind() == "identifier" {
+            env.push(node_value(&lhs, src));
+        }
+        if lhs.kind() == "tuple_expression" {
+            let mut tc = lhs.walk();
+            for param in lhs.named_children(&mut tc) {
+                env.push(node_value(&param, src));
+            }
+        }
+        if lhs.kind() == "typed_expression" {
+            if let Some(x) = lhs.named_child(0) {
+                if x.kind() == "identifier" {
+                    env.push(node_value(&x, src));
+                }
+            }
+        }
+    }
+}
 fn scoped_eval(
     ctx: &mut Ctx,
     node: &Node,
@@ -345,31 +364,14 @@ fn scoped_eval(
                 newenv.push(node_value(&first, src));
             }
         }
-        if child.kind() == "local_declaration"{
+        if child.kind() == "local_declaration" || child.kind() == "global_declaration" {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
                 newenv.push(node_value(&var, src))
             }
         }
         if child.kind() == "for_binding" {
-            if let Some(lhs) = child.named_child(0) {
-                if lhs.kind() == "identifier" {
-                    newenv.push(node_value(&lhs, src));
-                }
-                if lhs.kind() == "tuple_expression" {
-                    let mut tc = lhs.walk();
-                    for param in lhs.named_children(&mut tc) {
-                        newenv.push(node_value(&param, src));
-                    }
-                }
-                if lhs.kind() == "typed_expression" {
-                    if let Some(x) = lhs.named_child(0) {
-                        if x.kind() == "identifier" {
-                            newenv.push(node_value(&x, src));
-                        }
-                    }
-                }
-            }
+            sym_for_binding(node, src, &mut newenv);
         }
         result.extend(eval(ctx, &child, src, &newenv));
     }
@@ -397,6 +399,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "quote_expression"
         | "quote_statement"
         | "local_declaration"
+        | "global_declaration"
         | "macro_definition" => (),
 
         "function_definition"
@@ -557,7 +560,6 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &rnode, src, env));
             }
         }
-
         "module_definition" => {
             if let Some(name) = node.named_child(0) {
                 ctx.current_module = format!("{}.{}", ctx.current_module, node_value(&name, src))
@@ -566,7 +568,6 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
             scoped_eval(ctx, &node, src, &env, &mut result, 1);
         }
-
         "identifier" | "macro_identifier" => {
             if let Some(failed) = analyse(&ctx, &node, src, env, "normal") {
                 result.push(failed);
@@ -591,11 +592,33 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &first, src, &env));
             }
         }
-        "index_expression" | "vector_expression" | "argument_list" | "keyword_parameters" => {
+        "index_expression" | "vector_expression" | "keyword_parameters" => {
             let mut tc = node.walk();
             for child in node.named_children(&mut tc) {
                 if child.kind() != "operator" {
                     result.extend(eval(ctx, &child, src, &env));
+                }
+            }
+        }
+        "argument_list" => {
+            let mut tc = node.walk();
+            let mut newenv: Vec<String> = vec![];
+            newenv.extend_from_slice(env);
+            for child in node.named_children(&mut tc) {
+                if child.kind() == "for_clause" {
+                    if let Some(name) = child.named_child(0) {
+                        sym_for_binding(&name, src, &mut newenv)
+                    }
+                }
+            }
+            for child in node.named_children(&mut tc) {
+                if child.kind() == "for_clause" {
+                    if let Some(name) = child.named_child(0) {
+                        result.extend(eval(ctx, &name, src, &newenv));
+                    }
+                }
+                else if child.kind() != "operator" {
+                    result.extend(eval(ctx, &child, src, &newenv));
                 }
             }
         }
@@ -1782,5 +1805,30 @@ mod tests {
         assert_eq!(two.symbol, "EVENT_TYPE".to_string());
         assert_eq!(two.row, 7);
         assert_eq!(two.column, 8);
+    }
+    #[test]
+    fn test_for_clause() {
+        let snip = r#"
+         local Dict
+         Dict(string(k) => nothing for (k, v) in pairs(tab))
+        "#;
+        let env: Vec<String> = vec!["string".to_string(), "pairs".to_string(), "nothing".to_string()];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: vec![],
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "tab".to_string());
+        assert_eq!(one.row, 2);
+        assert_eq!(one.column, 55);
     }
 }
