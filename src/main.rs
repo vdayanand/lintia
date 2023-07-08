@@ -149,7 +149,6 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
 fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
     for (name, moduleobj) in ctx.loaded_modules.iter() {
         if name == module_name {
-            println!("moduleobj => {:?}", moduleobj);
             return moduleobj.symbols.exported.clone()
         }
     }
@@ -592,12 +591,14 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
         }
         "module_definition" => {
+            let current_module = ctx.current_module.clone();
             if let Some(name) = node.named_child(0) {
                 ctx.current_module = format!("{}.{}", ctx.current_module, node_value(&name, src))
             } else {
                 unex(node);
             }
             scoped_eval(ctx, &node, src, &env, &mut result, 1);
+            ctx.current_module = current_module.to_string();
         }
         "identifier" | "macro_identifier" => {
             if let Some(failed) = analyse(&ctx, &node, src, env, "normal") {
