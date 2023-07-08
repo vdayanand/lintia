@@ -1,14 +1,14 @@
 use clap::{command, Arg};
 use colored::Colorize;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::collections::HashMap;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
-use serde::{Serialize, Deserialize};
-use serde_json;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -19,7 +19,7 @@ struct UndefVar {
     symbol: String,
     row: usize,
     column: usize,
-    filepath: String
+    filepath: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -60,7 +60,7 @@ fn print_node(node: &tree_sitter::Node, src: &Src) {
 
 fn row(node: &Node) -> usize {
     let p = node.start_position();
-    return p.row+1;
+    return p.row + 1;
 }
 
 fn col(node: &Node) -> usize {
@@ -93,6 +93,7 @@ fn is_symbol_defined(
     }
     return false;
 }
+
 fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -> Option<UndefVar> {
     let sym = if idtype == "string_macro" {
         let mut b = String::from("@");
@@ -121,7 +122,7 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
         symbol: sym,
         row: r,
         column: c,
-        filepath: src.src_path.clone()
+        filepath: src.src_path.clone(),
     });
 }
 
@@ -146,14 +147,73 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
         }
     }
 }
+
+fn module_height(module: &Module, current_module: &String) -> Option<usize> {
+    if module.name == *current_module {
+        return Some(0);
+    }
+    for child in module.children.iter() {
+        if let Some(height) = module_height(child, current_module) {
+            return Some(height + 1);
+        }
+    }
+    return None;
+}
+
+fn module_no(name: &String) -> (String, usize) {
+    let mut count = 0;
+    let mut newname: Vec<char> = vec![];
+    for c in name.chars() {
+        if c == '.' {
+            count += 1;
+        } else {
+            newname.push(c);
+        }
+    }
+    return (newname.iter().collect(), count);
+}
+
+fn exported(src_module: &Module, parent_name: &String, module_name: &String) -> Vec<String> {
+    if src_module.name == *parent_name {
+        for child in src_module.children.iter() {
+            if child.name == *module_name {
+                return child.symbols.exported.clone();
+            }
+        }
+        return vec![];
+    }
+    for child in src_module.children.iter() {
+        let exported_syms = exported(child, parent_name, module_name);
+        if exported_syms.len() != 0 {
+            return exported_syms;
+        }
+    }
+    return vec![];
+}
+
 fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
     for (name, moduleobj) in ctx.loaded_modules.iter() {
         if name == module_name {
-            return moduleobj.symbols.exported.clone()
+            return moduleobj.symbols.exported.clone();
         }
     }
-    return vec![]
+    if ctx.src_module_root.is_none() {
+        return vec![]
+    }
+    let src_module = &ctx.src_module_root;
+    let (module_name_real, rel) = module_no(module_name);
+    let src_mod = src_module.as_ref().unwrap();
+    if let Some(module_height) = module_height(src_mod, &ctx.current_module) {
+        let mod_parts: Vec<&str> = module_name_real.split(".").collect();
+        let parent_height = module_height - rel;
+        if parent_height < mod_parts.len() {
+            let ancestor_name = mod_parts[0..parent_height].to_vec().join(".");
+            return exported(src_mod, &ancestor_name, &module_name_real);
+        }
+    }
+    panic!("Unexpected!!");
 }
+
 fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
@@ -342,10 +402,9 @@ fn scoped_eval(
         }
         if child.kind() == "import_statement" {
             if let Some(nmodule) = child.named_child(0) {
-                if nmodule.kind() == "identifier"{
+                if nmodule.kind() == "identifier" {
                     let module_name = node_value(&nmodule, src);
                     let mut exported = get_exported_symbols(&ctx, &module_name);
-                    println!("exported => {:?} module_name => {}", exported, module_name);
                     exported.push(module_name);
                     newenv.extend_from_slice(&exported);
                 }
@@ -495,7 +554,10 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &macro_arg, src, env));
             }
         }
-        "parenthesized_expression" | "global_declaration" | "slurp_parameter" | "interpolation_expression"=> {
+        "parenthesized_expression"
+        | "global_declaration"
+        | "slurp_parameter"
+        | "interpolation_expression" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
             }
@@ -659,7 +721,6 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 let tree = parseinfo.tree;
                 let newsrc = parseinfo.src;
                 let root = tree.root_node();
-                let mut tc = root.walk();
                 change_pwd(&PathBuf::from(&newsrc.src_path));
                 scoped_eval(ctx, &root, &newsrc, &Vec::<String>::new(), &mut result, 0);
                 change_pwd(&PathBuf::from(&src.src_path));
@@ -927,7 +988,10 @@ fn parse_node(src: &Src) -> Tree {
 
 fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     let content = load_jl_file(file);
-    let src = Src {src_str: content, src_path: file.to_string_lossy().into_owned()};
+    let src = Src {
+        src_str: content,
+        src_path: file.to_string_lossy().into_owned(),
+    };
     let tree = parse_node(&src);
     let root_node = tree.root_node();
     let main_module = Module {
@@ -941,7 +1005,7 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     let mut tc = root_node.walk();
     for modulenode in root_node.named_children(&mut tc) {
         if modulenode.kind() == "module_definition" {
-            return construct_module_tree(main_module, &modulenode, &src)
+            return construct_module_tree(main_module, &modulenode, &src);
         }
     }
     panic!("Unexpected state while constructing module")
@@ -967,10 +1031,13 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
-    let uuidmod = module_from_file("UUIDs", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
+    let uuidmod = module_from_file(
+        "UUIDs",
+        &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
+    );
     let json = serde_json::to_string(&uuidmod).unwrap();
     _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
-    ctx.loaded_modules.insert("UUIDs".to_string(),  uuidmod);
+    ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
@@ -990,7 +1057,7 @@ fn get_env_vec(tomlstr: &str) -> Vec<String> {
 
 fn load_jl_file(file: &PathBuf) -> String {
     let jl_str = if let Ok(jl_str) = fs::read_to_string(file) {
-//        println!("loaded julia file {:?}", file);
+        //        println!("loaded julia file {:?}", file);
         jl_str
     } else {
         panic!("failed to load julia file {:?}", file);
@@ -1000,7 +1067,7 @@ fn load_jl_file(file: &PathBuf) -> String {
 
 fn change_pwd(path: &PathBuf) {
     let newpwd = path.parent().unwrap();
-//    println!("Changing pwd to {:?} {:?}", newpwd, path);
+    //    println!("Changing pwd to {:?} {:?}", newpwd, path);
     env::set_current_dir(newpwd).expect("Failed to change directory");
 }
 
