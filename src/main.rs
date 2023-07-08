@@ -968,7 +968,7 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     ctx.current_module = "Main".to_string();
     let uuidmod = module_from_file("UUIDs", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
     let json = serde_json::to_string(&uuidmod).unwrap();
-    _ = write_file(&PathBuf::from("/Users/vdayanand/rs/lintia/test.json"), &json);
+    _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
     ctx.loaded_modules.insert("UUIDs".to_string(),  uuidmod);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
