@@ -146,7 +146,15 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
         }
     }
 }
-
+fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
+    for (name, moduleobj) in ctx.loaded_modules.iter() {
+        if name == module_name {
+            println!("moduleobj => {:?}", moduleobj);
+            return moduleobj.symbols.exported.clone()
+        }
+    }
+    return vec![]
+}
 fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
@@ -333,7 +341,17 @@ fn scoped_eval(
                 }
             }
         }
-
+        if child.kind() == "import_statement" {
+            if let Some(nmodule) = child.named_child(0) {
+                if nmodule.kind() == "identifier"{
+                    let module_name = node_value(&nmodule, src);
+                    let mut exported = get_exported_symbols(&ctx, &module_name);
+                    println!("exported => {:?} module_name => {}", exported, module_name);
+                    exported.push(module_name);
+                    newenv.extend_from_slice(&exported);
+                }
+            }
+        }
         if child.kind() == "assignment"
             || child.kind() == "typed_parameter"
             || child.kind() == "optional_parameter"
@@ -642,9 +660,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 let root = tree.root_node();
                 let mut tc = root.walk();
                 change_pwd(&PathBuf::from(&newsrc.src_path));
-                for child in root.named_children(&mut tc) {
-                    result.extend(eval(ctx, &child, &newsrc, &Vec::<String>::new()));
-                }
+                scoped_eval(ctx, &root, &newsrc, &Vec::<String>::new(), &mut result, 0);
                 change_pwd(&PathBuf::from(&src.src_path));
             } else {
                 for child in node.named_children(&mut tc) {
@@ -917,11 +933,17 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
         name: modname.to_string(),
         symbols: Symbols {
             exported: vec![],
-            toplevel: vec!["Main".to_string()],
+            toplevel: vec![modname.to_string()],
         },
         children: vec![],
     };
-    return construct_module_tree(main_module, &root_node, &src)
+    let mut tc = root_node.walk();
+    for modulenode in root_node.named_children(&mut tc) {
+        if modulenode.kind() == "module_definition" {
+            return construct_module_tree(main_module, &modulenode, &src)
+        }
+    }
+    panic!("Unexpected state while constructing module")
 }
 fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
     let mut file_handle = fs::File::create(file)?;
@@ -944,10 +966,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
-    let uuidmod = module_from_file("Main", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
+    let uuidmod = module_from_file("UUIDs", &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"));
     let json = serde_json::to_string(&uuidmod).unwrap();
     _ = write_file(&PathBuf::from("/Users/vdayanand/rs/lintia/test.json"), &json);
-    ctx.loaded_modules.insert("UUID".to_string(),  uuidmod);
+    ctx.loaded_modules.insert("UUIDs".to_string(),  uuidmod);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
@@ -967,7 +989,7 @@ fn get_env_vec(tomlstr: &str) -> Vec<String> {
 
 fn load_jl_file(file: &PathBuf) -> String {
     let jl_str = if let Ok(jl_str) = fs::read_to_string(file) {
-        println!("loaded julia file {:?}", file);
+//        println!("loaded julia file {:?}", file);
         jl_str
     } else {
         panic!("failed to load julia file {:?}", file);
@@ -977,7 +999,7 @@ fn load_jl_file(file: &PathBuf) -> String {
 
 fn change_pwd(path: &PathBuf) {
     let newpwd = path.parent().unwrap();
-    println!("Changing pwd to {:?} {:?}", newpwd, path);
+//    println!("Changing pwd to {:?} {:?}", newpwd, path);
     env::set_current_dir(newpwd).expect("Failed to change directory");
 }
 
