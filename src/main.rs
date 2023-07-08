@@ -1200,7 +1200,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1242,7 +1242,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
 
@@ -1265,7 +1265,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1283,7 +1283,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1319,7 +1319,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1332,7 +1332,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1355,7 +1355,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1374,7 +1374,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1406,7 +1406,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1448,7 +1448,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1486,7 +1486,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1522,7 +1522,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1554,7 +1554,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1577,7 +1577,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1600,7 +1600,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1640,7 +1640,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1678,7 +1678,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1719,7 +1719,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1753,7 +1753,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1783,7 +1783,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1810,7 +1810,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1837,7 +1837,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1861,7 +1861,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1888,7 +1888,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1911,7 +1911,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1940,7 +1940,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -1973,7 +1973,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
@@ -2006,7 +2006,7 @@ mod tests {
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
-            loaded_modules: vec![],
+            loaded_modules: HashMap::new(),
             default_env: vec![],
         };
         let source_code = Src {
