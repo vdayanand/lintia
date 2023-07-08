@@ -5,8 +5,11 @@ use serde_json;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::io;
 use std::io::Write;
+use std::io::Read;
 use std::path::PathBuf;
+use std::path::Path;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
 
@@ -1033,6 +1036,33 @@ fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
     file_handle.flush()?;
     Ok(())
 }
+fn read_file(file_path: &Path) -> io::Result<String> {
+    let mut file = fs::File::open(file_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    Ok(contents)
+}
+
+fn add_deps(ctx: &mut Ctx) -> io::Result<()>  {
+    let directory_path = Path::new("/Users/vdayanand/.lintia");
+    let entries = fs::read_dir(directory_path)?;
+    for entry in entries {
+        let entry = entry?;
+         let file_path = entry.path();
+        if file_path.is_file() {
+            match read_file(&file_path) {
+                Ok(contents) => {
+                    if let Ok(module) = serde_json::from_str::<Module>(&contents) {
+                        ctx.loaded_modules.insert(module.name.clone(), module);
+                    }
+                }
+                Err(error) => eprintln!("Failed to read file: {:?}", error),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let tree = parse_node(src);
     let root_node = tree.root_node();
@@ -1052,9 +1082,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
         "UUIDs",
         &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
     );
-    let json = serde_json::to_string(&uuidmod).unwrap();
-    _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
+    //let json = serde_json::to_string(&uuidmod).unwrap();
+    // _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
     ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
+    add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
