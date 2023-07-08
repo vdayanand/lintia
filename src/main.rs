@@ -148,19 +148,22 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
     }
 }
 
-fn module_height(module: &Module, current_module: &String) -> Option<usize> {
-    if module.name == *current_module {
-        return Some(0);
+fn module_height(module: &Module, current_module: &String) -> Option<i32> {
+    let main: Vec<&str> = module.name.split(".").collect();
+    let current: Vec<&str> = current_module.split(".").collect();
+    if main[0] != current[0] {
+        return None;
     }
-    for child in module.children.iter() {
-        if let Some(height) = module_height(child, current_module) {
-            return Some(height + 1);
+    let mut count = 0;
+    for element in current.iter() {
+        if !main.contains(element) {
+            count += 1;
         }
     }
-    return None;
+    return Some(count);
 }
 
-fn module_no(name: &String) -> (String, usize) {
+fn module_no(name: &String) -> (String, i32) {
     let mut count = 0;
     let mut newname: Vec<char> = vec![];
     for c in name.chars() {
@@ -173,8 +176,13 @@ fn module_no(name: &String) -> (String, usize) {
     return (newname.iter().collect(), count);
 }
 
-fn exported(src_module: &Module, parent_name: &String, module_name: &String) -> Vec<String> {
-    if src_module.name == *parent_name {
+fn exported(
+    src_module: &Module,
+    parent_name: &String,
+    module_name: &String,
+    acc: &String,
+) -> Vec<String> {
+    if acc == parent_name {
         for child in src_module.children.iter() {
             if child.name == *module_name {
                 return child.symbols.exported.clone();
@@ -183,7 +191,8 @@ fn exported(src_module: &Module, parent_name: &String, module_name: &String) -> 
         return vec![];
     }
     for child in src_module.children.iter() {
-        let exported_syms = exported(child, parent_name, module_name);
+        let newmod = format!("{}.{}", acc, child.name);
+        let exported_syms = exported(child, parent_name, module_name, &newmod);
         if exported_syms.len() != 0 {
             return exported_syms;
         }
@@ -198,18 +207,25 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
         }
     }
     if ctx.src_module_root.is_none() {
-        return vec![]
+        return vec![];
     }
     let src_module = &ctx.src_module_root;
     let (module_name_real, rel) = module_no(module_name);
     let src_mod = src_module.as_ref().unwrap();
     if let Some(module_height) = module_height(src_mod, &ctx.current_module) {
-        let mod_parts: Vec<&str> = module_name_real.split(".").collect();
-        let parent_height = module_height - rel;
-        if parent_height < mod_parts.len() {
-            let ancestor_name = mod_parts[0..parent_height].to_vec().join(".");
-            return exported(src_mod, &ancestor_name, &module_name_real);
+        let mod_parts: Vec<String> = ctx
+            .current_module
+            .split(".")
+            .map(|s| s.to_string())
+            .collect();
+        let parent_height: i32 = module_height - rel + 1;
+        if 0 <= parent_height && parent_height < mod_parts.len().try_into().unwrap() {
+            let ancestor_name = mod_parts[0..(parent_height as usize) + 1]
+                .to_vec()
+                .join(".");
+            return exported(src_mod, &ancestor_name, &module_name_real, &src_mod.name);
         }
+        return vec![];
     }
     panic!("Unexpected!!");
 }
@@ -402,10 +418,11 @@ fn scoped_eval(
         }
         if child.kind() == "import_statement" {
             if let Some(nmodule) = child.named_child(0) {
-                if nmodule.kind() == "identifier" {
+                if nmodule.kind() == "identifier" || nmodule.kind() == "relative_qualifier" {
                     let module_name = node_value(&nmodule, src);
                     let mut exported = get_exported_symbols(&ctx, &module_name);
-                    exported.push(module_name);
+                    let (module_name_real, _) = module_no(&module_name);
+                    exported.push(module_name_real);
                     newenv.extend_from_slice(&exported);
                 }
             }
@@ -655,7 +672,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "module_definition" => {
             let current_module = ctx.current_module.clone();
             if let Some(name) = node.named_child(0) {
-                ctx.current_module = format!("{}.{}", ctx.current_module, node_value(&name, src))
+                ctx.current_module = format!("{}.{}", ctx.current_module, node_value(&name, src));
             } else {
                 unex(node);
             }
