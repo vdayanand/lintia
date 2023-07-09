@@ -1092,10 +1092,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
         "UUIDs",
         &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
     );
-    //let json = serde_json::to_string(&uuidmod).unwrap();
-    // _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
+    let json = serde_json::to_string(&uuidmod).unwrap();
+     _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
     ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
-    add_deps(ctx);
+    let _ = add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
@@ -1352,7 +1352,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env);
         assert_eq!(errs.len(), 0);
     }
     #[test]
