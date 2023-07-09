@@ -1,5 +1,8 @@
+use byteorder::{ByteOrder, LittleEndian};
 use clap::{command, Arg};
 use colored::Colorize;
+use crc32c::{crc32c, crc32c_append};
+use hex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -12,9 +15,49 @@ use std::path::Path;
 use std::path::PathBuf;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
+use uuid::Uuid;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
+}
+
+const SLUG_CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+fn reverse_string(input: &str) -> String {
+    let mut chars: Vec<char> = input.chars().collect();
+    chars.reverse();
+    let reversed: String = chars.into_iter().collect();
+    reversed
+}
+
+fn slug(x: u32, p: i32) -> String {
+    let mut y: u32 = x;
+    let slug_chars: Vec<char> = SLUG_CHARS.chars().collect();
+    let n = slug_chars.len();
+    let mut result = String::with_capacity(p as usize);
+    for _ in 0..p {
+        let d = (y % n as u32) as usize;
+        y /= n as u32;
+        result.insert(0, slug_chars[d]);
+    }
+    reverse_string(result.as_str())
+}
+fn string_to_bytes(input: &str) -> Vec<u8> {
+    hex::decode(input).unwrap()
+}
+fn crc32c_uuidhash(uuid: Uuid, sha: &str) -> u32 {
+    let uuid_value: u128 = uuid.as_u128();
+    let mut bytes: [u8; 16] = [0; 16];
+    LittleEndian::write_u128(&mut bytes, uuid_value);
+    let crcuuid = crc32c(&bytes);
+    let bytes = string_to_bytes(sha);
+    return crc32c_append(crcuuid, &bytes);
+}
+
+fn version_slug(uuid: &str, sha: &str) -> String {
+    let uuidobj = Uuid::parse_str(uuid).unwrap();
+    let input = "5688002de970b9eee14b7af7bbbd1fdac10c9bbe";
+    let hash = crc32c_uuidhash(uuidobj, input);
+    return slug(hash, 5);
 }
 
 #[derive(Debug)]
