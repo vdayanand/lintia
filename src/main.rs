@@ -55,8 +55,7 @@ fn crc32c_uuidhash(uuid: Uuid, sha: &str) -> u32 {
 
 fn version_slug(uuid: &str, sha: &str) -> String {
     let uuidobj = Uuid::parse_str(uuid).unwrap();
-    let input = "5688002de970b9eee14b7af7bbbd1fdac10c9bbe";
-    let hash = crc32c_uuidhash(uuidobj, input);
+    let hash = crc32c_uuidhash(uuidobj, sha);
     return slug(hash, 5);
 }
 
