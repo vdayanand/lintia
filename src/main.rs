@@ -226,7 +226,12 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
             .split(".")
             .map(|s| s.to_string())
             .collect();
-        let parent_height: i32 = module_height - rel + 1;
+        let parent_height: i32 = if rel == 1 {
+            module_height
+        }
+        else {
+            module_height - rel
+        };
         if 0 <= parent_height && parent_height < mod_parts.len().try_into().unwrap() {
             let ancestor_name = mod_parts[0..(parent_height as usize) + 1]
                 .to_vec()
@@ -2067,12 +2072,12 @@ mod tests {
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
-        assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 4);
-        assert_eq!(one.column, 13);
+        assert_eq!(one.symbol, "m".to_string());
+        assert_eq!(one.row, 11);
+        assert_eq!(one.column, 14);
         let two = errs.remove(0);
-        assert_eq!(two.symbol, "m".to_string());
-        assert_eq!(two.row, 4);
-        assert_eq!(two.column, 13);
+        assert_eq!(two.symbol, "y".to_string());
+        assert_eq!(two.row, 15);
+        assert_eq!(two.column, 11);
     }
 }
