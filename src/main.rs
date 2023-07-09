@@ -8,11 +8,13 @@ use serde_json;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use toml::Value;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
 use uuid::Uuid;
@@ -41,9 +43,11 @@ fn slug(x: u32, p: i32) -> String {
     }
     reverse_string(result.as_str())
 }
+
 fn string_to_bytes(input: &str) -> Vec<u8> {
     hex::decode(input).unwrap()
 }
+
 fn crc32c_uuidhash(uuid: Uuid, sha: &str) -> u32 {
     let uuid_value: u128 = uuid.as_u128();
     let mut bytes: [u8; 16] = [0; 16];
@@ -1109,6 +1113,81 @@ fn read_file(file_path: &Path) -> io::Result<String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     Ok(contents)
+}
+
+fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
+    let module = module_from_file(name, &PathBuf::from(path));
+    ctx.loaded_modules.insert(name, module);
+    //let json = serde_json::to_string(&mod).unwrap();
+    //_ = write_file(&PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)), &json);
+}
+
+fn load_project(ctx: &mut Ctx, path: &str) {
+    let projectfile = "Project.toml";
+    let manifestfile = "Manifest.toml";
+    // Read the TOML file content
+    let contents = fs::read_to_string(projecfile).expect("Failed to read the file.");
+    let mut packages: Vec<String> = vec![];
+    // Parse the TOML content into a TOML value
+    let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
+    if let Some(deps) = toml_value.get("deps") {
+        if let Some(table) = deps.as_table() {
+            // Iterate over the keys in the deps section
+            for key in table.keys() {
+                packages.push(&key)
+            }
+        }
+    }
+    if let Some(table) = toml_value.as_table() {
+        for (name, element) in table {
+            if !packages.contain(&name) {
+                continue;
+            }
+            if let Some(elements) = element.as_array() {
+                for elem in elements {
+                    if let Some(uuid) = elem.get("uuid") {
+                        if let Some(git_tree_sha1) = elem.get("git-tree-sha1") {
+                            let uuid = uuid.as_str().unwrap();
+                            let gittreesha1 = git_tree_sha1.as_str().unwrap();
+                            let slug = version_slug(uuid, gittreesha1);
+                            let deps_path = format!(
+                                "/Users/vdayanand/.julia/packages/{}/{}/src/{}.jl",
+                                name, slug, name
+                            );
+                            load_package(ctx, deps_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Read the TOML file content
+    let contents = fs::read_to_string(manifest).expect("Failed to read the file.");
+
+    // Parse the TOML content into a TOML value
+    let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
+
+    // Iterate over the top-level elements in the TOML file
+    if let Some(table) = toml_value.as_table() {
+        for (name, element) in table {
+            if let Some(elements) = element.as_array() {
+                for elem in elements {
+                    if let Some(uuid) = elem.get("uuid") {
+                        if let Some(git_tree_sha1) = elem.get("git-tree-sha1") {
+                            let uuid = uuid.as_str().unwrap();
+                            let gittreesha1 = git_tree_sha1.as_str().unwrap();
+                            let slug = version_slug(uuid, gittreesha1);
+                            let deps_path = format!(
+                                "/Users/vdayanand/.julia/packages/{}/{}/src/{}.jl",
+                                name, slug, name
+                            );
+                            load_package(ctx, deps_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn add_deps(ctx: &mut Ctx) -> io::Result<()> {
