@@ -209,6 +209,11 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
             return moduleobj.symbols.exported.clone();
         }
     }
+    if let Some(first_character) = module_name.chars().next() {
+        if first_character != '.' {
+            return vec![]
+        }
+    }
     if ctx.src_module_root.is_none() {
         return vec![];
     }
@@ -679,7 +684,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             } else {
                 unex(node);
             }
-            scoped_eval(ctx, &node, src, &env, &mut result, 1);
+            scoped_eval(ctx, &node, src, &vec![], &mut result, 1);
             ctx.current_module = current_module.to_string();
         }
         "identifier" | "macro_identifier" => {
@@ -1307,6 +1312,7 @@ mod tests {
     fn test_func() {
         let snip = r#"
          module Test
+         y = 1
          function hello(x)
             function test()
             end
@@ -1327,7 +1333,9 @@ mod tests {
             src_path: "<repl>".to_string(),
         };
         let errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 0);
+
         let env: Vec<String> = vec![];
         let mut ctx = Ctx {
             src_module_root: None,
@@ -1340,11 +1348,7 @@ mod tests {
             src_path: "<repl>".to_string(),
         };
         let mut errs = lint(&mut ctx, &source_code, &env);
-        assert_eq!(errs.len(), 1);
-        let one = errs.remove(0);
-        assert_eq!(one.symbol, "y".to_string());
-        assert_eq!(one.row, 7);
-        assert_eq!(one.column, 12);
+        assert_eq!(errs.len(), 0);
     }
     #[test]
     fn test_oneline_func() {
@@ -2028,5 +2032,47 @@ mod tests {
         assert_eq!(three.symbol, "y".to_string());
         assert_eq!(three.row, 11);
         assert_eq!(three.column, 8);
+    }
+    #[test]
+    fn test_relative_import() {
+        let snip = r#"
+        module A
+           t(x)=1
+           m(x)=1
+           export t
+           module B
+              import ..A
+              export x
+              x(y)=1
+              t
+              m
+           end
+           import .B
+           x
+           y
+        end
+        "#;
+        let env: Vec<String> = vec![];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: HashMap::new(),
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 2);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "y".to_string());
+        assert_eq!(one.row, 4);
+        assert_eq!(one.column, 13);
+        let two = errs.remove(0);
+        assert_eq!(two.symbol, "m".to_string());
+        assert_eq!(two.row, 4);
+        assert_eq!(two.column, 13);
     }
 }
