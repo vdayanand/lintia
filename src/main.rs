@@ -6,10 +6,10 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io;
-use std::io::Write;
 use std::io::Read;
-use std::path::PathBuf;
+use std::io::Write;
 use std::path::Path;
+use std::path::PathBuf;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
 
@@ -211,7 +211,7 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
     }
     if let Some(first_character) = module_name.chars().next() {
         if first_character != '.' {
-            return vec![]
+            return vec![];
         }
     }
     if ctx.src_module_root.is_none() {
@@ -228,8 +228,7 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
             .collect();
         let parent_height: i32 = if rel == 1 {
             module_height
-        }
-        else {
+        } else {
             module_height - rel
         };
         if 0 <= parent_height && parent_height < mod_parts.len().try_into().unwrap() {
@@ -280,6 +279,23 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 let mut b = String::from("@");
                 b.push_str(&String::from(node_value(&name, src)));
                 syms.push(b);
+            }
+        }
+        "macrocall_expression" => {
+            let mut tc = node.walk();
+            for child in node.named_children(&mut tc) {
+                if child.kind() == "macro_argument_list" {
+                    if let Some(arg) = child.named_child(0) {
+                        if arg.kind() == "function_definition" || arg.kind() == "struct_definition"
+                        {
+                            if let Some(id) = arg.named_child(0) {
+                                if id.kind() == "identifier" {
+                                    syms.push(node_value(&id, src));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         "import_statement" => {
@@ -573,16 +589,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
         }
         "macrocall_expression" => {
-            if let Some(firstnode) = node.named_child(0) {
-                if let Some(name) = firstnode.named_child(0) {
-                    if let Some(failed) = analyse(&ctx, &name, src, env, "macro") {
-                        result.push(failed);
-                    }
-                }
-            }
-            if let Some(macro_arg) = node.named_child(1) {
-                result.extend(eval(ctx, &macro_arg, src, env));
-            }
+            scoped_eval(ctx, &node, src, env, &mut result, 0);
         }
         "parenthesized_expression"
         | "global_declaration"
@@ -590,6 +597,15 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "interpolation_expression" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
+            }
+        }
+        "macro_identifier" => {
+            if let Some(name) = node.named_child(0) {
+                if let Some(id) = name.named_child(0) {
+                    if let Some(failed) = analyse(&ctx, &name, src, env, "macro") {
+                        result.push(failed);
+                    }
+                }
             }
         }
         "prefixed_string_literal" => {
@@ -692,7 +708,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             scoped_eval(ctx, &node, src, &vec![], &mut result, 1);
             ctx.current_module = current_module.to_string();
         }
-        "identifier" | "macro_identifier" => {
+        "identifier" => {
             if let Some(failed) = analyse(&ctx, &node, src, env, "normal") {
                 result.push(failed);
             }
@@ -1053,12 +1069,12 @@ fn read_file(file_path: &Path) -> io::Result<String> {
     Ok(contents)
 }
 
-fn add_deps(ctx: &mut Ctx) -> io::Result<()>  {
+fn add_deps(ctx: &mut Ctx) -> io::Result<()> {
     let directory_path = Path::new("/Users/vdayanand/.lintia");
     let entries = fs::read_dir(directory_path)?;
     for entry in entries {
         let entry = entry?;
-         let file_path = entry.path();
+        let file_path = entry.path();
         if file_path.is_file() {
             match read_file(&file_path) {
                 Ok(contents) => {
@@ -1093,7 +1109,7 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
         &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
     );
     let json = serde_json::to_string(&uuidmod).unwrap();
-     _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
+    _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
     ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
     let _ = add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
@@ -1477,7 +1493,7 @@ mod tests {
     fn test_struct() {
         let snip = r#"
         abstract type Animal end
-        struct Typee <: Animal
+        Base.@kwdef struct Typee <: Animal
             Y::Int
             Z
             Typee(U)=new(1,2)
@@ -1491,7 +1507,7 @@ mod tests {
             M
         end
         "#;
-        let env: Vec<String> = vec![];
+        let env: Vec<String> = vec!["Base".to_string()];
         let mut ctx = Ctx {
             src_module_root: None,
             current_module: "".to_string(),
@@ -2079,5 +2095,32 @@ mod tests {
         assert_eq!(two.symbol, "y".to_string());
         assert_eq!(two.row, 15);
         assert_eq!(two.column, 11);
+    }
+    #[test]
+    fn test_def_with_macrocall() {
+        let snip = r#"
+        macro t()
+        end
+        @t struct A
+        end
+        A()
+        @t function def()
+        end
+        def()
+        "#;
+        let env: Vec<String> = vec![];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: HashMap::new(),
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let errs = lint(&mut ctx, &source_code, &env);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 0);
     }
 }
