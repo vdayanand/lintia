@@ -1003,9 +1003,10 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
         if child.kind() == "export_statement" {
             let mut tc = child.walk();
             for expsym in child.named_children(&mut tc) {
-                if expsym.kind() == "identifier" {
+                if expsym.kind() == "identifier" || expsym.kind() == "macro_identifier" {
                     symbols.exported.push(node_value(&expsym, src));
                 } else {
+                    print_node(&expsym, src);
                     unex(&expsym);
                 }
             }
@@ -1160,7 +1161,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
                             );
                             load_package(ctx, &name, &deps_path);
                         } else {
-                            if let Err(_) = add_deps(ctx, &name){
+                            if let Err(_) = add_deps(ctx, &name) {
                                 panic!("failed to load deps")
                             }
                         }
