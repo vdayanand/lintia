@@ -505,7 +505,7 @@ fn scoped_eval(
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
-                } else if lhs.kind() == "typed_expression" {
+                } else if lhs.kind() == "typed_expression" || lhs.kind() == "typed_parameter" {
                     if let Some(lhstyped) = lhs.named_child(0) {
                         newenv.push(node_value(&lhstyped, src));
                     }
