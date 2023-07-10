@@ -8,13 +8,11 @@ use serde_json;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use toml::Value;
 use toml::Value;
 use tree_sitter::{Language, Node, Parser, Tree};
 use uuid::Uuid;
@@ -648,7 +646,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "macro_identifier" => {
             if let Some(name) = node.named_child(0) {
                 if let Some(id) = name.named_child(0) {
-                    if let Some(failed) = analyse(&ctx, &name, src, env, "macro") {
+                    if let Some(failed) = analyse(&ctx, &id, src, env, "macro") {
                         result.push(failed);
                     }
                 }
@@ -1102,6 +1100,7 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     }
     panic!("Unexpected state while constructing module")
 }
+
 fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
     let mut file_handle = fs::File::create(file)?;
     file_handle.write_all(content.as_bytes())?;
@@ -1116,31 +1115,36 @@ fn read_file(file_path: &Path) -> io::Result<String> {
 }
 
 fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
+    let current_dir = env::current_dir().unwrap();
+    change_pwd(&PathBuf::from(&path));
     let module = module_from_file(name, &PathBuf::from(path));
-    ctx.loaded_modules.insert(name, module);
+    ctx.loaded_modules.insert(name.to_string(), module);
+    println!("loaded package {:?} at {:?}", name, path);
+    change_pwd_dir(&current_dir);
     //let json = serde_json::to_string(&mod).unwrap();
     //_ = write_file(&PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)), &json);
 }
 
-fn load_project(ctx: &mut Ctx, path: &str) {
-    let projectfile = "Project.toml";
-    let manifestfile = "Manifest.toml";
+fn load_project(ctx: &mut Ctx, path: &PathBuf) {
+    let projectfile = path.join(PathBuf::from("Project.toml"));
+    let manifestfile = path.join(PathBuf::from("Manifest.toml"));
     // Read the TOML file content
-    let contents = fs::read_to_string(projecfile).expect("Failed to read the file.");
+    let contents = fs::read_to_string(projectfile).expect("Failed to read the file.");
     let mut packages: Vec<String> = vec![];
     // Parse the TOML content into a TOML value
     let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
     if let Some(deps) = toml_value.get("deps") {
         if let Some(table) = deps.as_table() {
-            // Iterate over the keys in the deps section
             for key in table.keys() {
-                packages.push(&key)
+                packages.push(key.to_string())
             }
         }
     }
+    let contents = fs::read_to_string(manifestfile).expect("Failed to read the file.");
+    let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
     if let Some(table) = toml_value.as_table() {
         for (name, element) in table {
-            if !packages.contain(&name) {
+            if !packages.contains(&name) {
                 continue;
             }
             if let Some(elements) = element.as_array() {
@@ -1154,34 +1158,11 @@ fn load_project(ctx: &mut Ctx, path: &str) {
                                 "/Users/vdayanand/.julia/packages/{}/{}/src/{}.jl",
                                 name, slug, name
                             );
-                            load_package(ctx, deps_path);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Read the TOML file content
-    let contents = fs::read_to_string(manifest).expect("Failed to read the file.");
-
-    // Parse the TOML content into a TOML value
-    let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
-
-    // Iterate over the top-level elements in the TOML file
-    if let Some(table) = toml_value.as_table() {
-        for (name, element) in table {
-            if let Some(elements) = element.as_array() {
-                for elem in elements {
-                    if let Some(uuid) = elem.get("uuid") {
-                        if let Some(git_tree_sha1) = elem.get("git-tree-sha1") {
-                            let uuid = uuid.as_str().unwrap();
-                            let gittreesha1 = git_tree_sha1.as_str().unwrap();
-                            let slug = version_slug(uuid, gittreesha1);
-                            let deps_path = format!(
-                                "/Users/vdayanand/.julia/packages/{}/{}/src/{}.jl",
-                                name, slug, name
-                            );
-                            load_package(ctx, deps_path);
+                            load_package(ctx, &name, &deps_path);
+                        } else {
+                            if let Err(_) = add_deps(ctx, &name){
+                                panic!("failed to load deps")
+                            }
                         }
                     }
                 }
@@ -1190,27 +1171,21 @@ fn load_project(ctx: &mut Ctx, path: &str) {
     }
 }
 
-fn add_deps(ctx: &mut Ctx) -> io::Result<()> {
-    let directory_path = Path::new("/Users/vdayanand/.lintia");
-    let entries = fs::read_dir(directory_path)?;
-    for entry in entries {
-        let entry = entry?;
-        let file_path = entry.path();
-        if file_path.is_file() {
-            match read_file(&file_path) {
-                Ok(contents) => {
-                    if let Ok(module) = serde_json::from_str::<Module>(&contents) {
-                        ctx.loaded_modules.insert(module.name.clone(), module);
-                    }
-                }
-                Err(error) => eprintln!("Failed to read file: {:?}", error),
+fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
+    let file_path =
+        Path::new("/Users/vdayanand/.lintia").join(PathBuf::from(format!("{}.json", name)));
+    match read_file(&file_path) {
+        Ok(contents) => {
+            if let Ok(module) = serde_json::from_str::<Module>(&contents) {
+                ctx.loaded_modules.insert(module.name.clone(), module);
             }
         }
+        Err(error) => eprintln!("Failed to read file: {:?}", error),
     }
     Ok(())
 }
 
-fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
+fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -> Vec<UndefVar> {
     let tree = parse_node(src);
     let root_node = tree.root_node();
     let mut result: Vec<UndefVar> = vec![];
@@ -1225,14 +1200,18 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let modtree = construct_module_tree(default_module, &root_node, src);
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
-    let uuidmod = module_from_file(
-        "UUIDs",
-        &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
-    );
-    let json = serde_json::to_string(&uuidmod).unwrap();
-    _ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
-    ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
-    let _ = add_deps(ctx);
+    if let Some(pj) = project {
+        load_project(ctx, &pj);
+    }
+
+    //let uuidmod = module_from_file(
+    //    "UUIDs",
+    //    &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
+    //);
+    //let json = serde_json::to_string(&uuidmod).unwrap();
+    //_ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
+    //    ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
+    //    let _ = add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
@@ -1262,8 +1241,10 @@ fn load_jl_file(file: &PathBuf) -> String {
 
 fn change_pwd(path: &PathBuf) {
     let newpwd = path.parent().unwrap();
-    //    println!("Changing pwd to {:?} {:?}", newpwd, path);
     env::set_current_dir(newpwd).expect("Failed to change directory");
+}
+fn change_pwd_dir(path: &PathBuf) {
+    env::set_current_dir(path).expect("Failed to change directory");
 }
 
 fn current_pwd() -> PathBuf {
@@ -1272,6 +1253,7 @@ fn current_pwd() -> PathBuf {
 
 fn main() {
     let matches = command!() // requires `cargo` feature
+        .arg(Arg::new("project"))
         .arg(Arg::new("file"))
         .get_matches();
 
@@ -1295,6 +1277,20 @@ fn main() {
         println!("File is missing");
         return;
     };
+    let project = if let Some(project) = matches.get_one::<String>("project") {
+        if let Ok(absolute_path) = fs::canonicalize(project) {
+            absolute_path
+        } else {
+            panic!(
+                "Failed to get the absolute path {} cwd: {:?}",
+                project,
+                current_pwd()
+            );
+        }
+    } else {
+        println!("Project is missing");
+        return;
+    };
     let src = load_jl_file(&file);
     //let env = load_env("src/pkgs");
     let boot_env = include_str!("pkgs/boot.toml");
@@ -1314,7 +1310,7 @@ fn main() {
         src_str: src,
         src_path: file.to_string_lossy().into_owned(),
     };
-    let linfo = lint(&mut ctx, &src, &localenv);
+    let linfo = lint(&mut ctx, &src, &localenv, Some(project));
     for err in linfo {
         println!(
             "Undefined symbol {} found at row:{} col:{} in {}",
@@ -1354,7 +1350,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 4);
@@ -1397,7 +1393,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "z".to_string());
         assert_eq!(one.row, 4);
@@ -1419,7 +1415,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
 
         let one = errs.remove(0);
         assert_eq!(errs.len(), 0);
@@ -1437,7 +1433,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
 
         let one = errs.remove(0);
         assert_eq!(errs.len(), 1);
@@ -1474,7 +1470,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 0);
 
@@ -1489,7 +1485,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 0);
     }
     #[test]
@@ -1508,7 +1504,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 0);
     }
     #[test]
@@ -1527,7 +1523,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "RG".to_string());
@@ -1559,7 +1555,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1601,7 +1597,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs {:?}", errs);
         assert_eq!(errs.len(), 1);
 
@@ -1639,7 +1635,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("{:?}", errs);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
@@ -1675,7 +1671,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1707,7 +1703,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Animal".to_string());
@@ -1730,7 +1726,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
@@ -1753,7 +1749,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
@@ -1793,7 +1789,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Int".to_string());
@@ -1831,7 +1827,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
 
         assert_eq!(errs.len(), 4);
         let one = errs.remove(0);
@@ -1872,7 +1868,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1906,7 +1902,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Z".to_string());
@@ -1936,7 +1932,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -1963,7 +1959,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Object".to_string());
@@ -1990,7 +1986,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -2014,7 +2010,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "g".to_string());
@@ -2041,7 +2037,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "y".to_string());
@@ -2064,7 +2060,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "Y".to_string());
@@ -2093,7 +2089,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
@@ -2126,7 +2122,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
@@ -2159,7 +2155,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 3);
         let one = errs.remove(0);
@@ -2205,7 +2201,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let mut errs = lint(&mut ctx, &source_code, &env);
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 2);
         let one = errs.remove(0);
@@ -2240,7 +2236,7 @@ mod tests {
             src_str: snip.to_string(),
             src_path: "<repl>".to_string(),
         };
-        let errs = lint(&mut ctx, &source_code, &env);
+        let errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 0);
     }
