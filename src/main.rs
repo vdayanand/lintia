@@ -179,17 +179,20 @@ fn unex(node: &Node) {
 
 fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
     if let Some(fname) = node.named_child(0) {
-        if fname.kind() == "identifier" {
+        if fname.kind() == "identifier" || fname.kind() == "operator" {
             syms.push(node_value(&fname, src));
         } else if fname.kind() == "field_expression" {
             if let Some(second) = fname.named_child(1) {
                 syms.push(node_value(&second, src));
             }
-        } else if fname.kind() == "function_object" || fname.kind() == "parameter_list" {
+        } else if fname.kind() == "function_object"
+            || fname.kind() == "parameter_list"
+            || fname.kind() == "parameter_list"
+        {
         } else if fname.kind() == "ERROR" {
             print_syntax_error(&fname, src);
         } else {
-            print_node(&node, src);
+            print_node(&fname, src);
             unex(&fname);
         }
     }
@@ -929,6 +932,32 @@ struct ParseInfo {
     tree: Tree,
     src: Src,
 }
+fn joinpath(base: PathBuf, path: PathBuf) -> PathBuf {
+    let mut joined = base;
+    joined.push(path);
+    joined
+}
+
+fn parse_file_args_call(callnode: &Node, src: &Src) -> PathBuf {
+    if let Some(name) = callnode.named_child(0) {
+        if node_value(&name, src) != "joinpath" {
+            panic!("Unknown include function")
+        }
+    }
+    if let Some(args) = callnode.named_child(1) {
+        let mut tc = args.walk();
+        let mut path = PathBuf::from("./");
+        for name in args.named_children(&mut tc) {
+            path = joinpath(
+                path,
+                PathBuf::from(node_value(&name, src).trim_matches('"')),
+            )
+        }
+        println!("path => {:?}", path);
+        return path;
+    }
+    panic!("Unexpected call node")
+}
 
 fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
     if child.kind() == "call_expression" {
@@ -939,16 +968,19 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                     if let Some(fileargs) = child.named_child(1) {
                         if fileargs.kind() == "argument_list" {
                             let mut tc = fileargs.walk();
-                            for filepath in fileargs.named_children(&mut tc) {
-                                let newsrc_path_u = node_value(&filepath, src);
-                                let newsrc_path = newsrc_path_u.trim_matches('"');
+                            for filenode in fileargs.named_children(&mut tc) {
+                                let filepath = if filenode.kind() == "call_expression" {
+                                    PathBuf::from(parse_file_args_call(&filenode, src))
+                                } else {
+                                    PathBuf::from(node_value(&filenode, src).trim_matches('"'))
+                                };
                                 let fullpath =
-                                    if let Ok(absolute_path) = fs::canonicalize(newsrc_path) {
+                                    if let Ok(absolute_path) = fs::canonicalize(&filepath) {
                                         absolute_path
                                     } else {
                                         panic!(
-                                            "Failed to get the absolute path {} cwd={:?}",
-                                            newsrc_path,
+                                            "Failed to get the absolute path {:?} cwd={:?}",
+                                            filepath,
                                             current_pwd()
                                         );
                                     };
@@ -1005,6 +1037,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
             for expsym in child.named_children(&mut tc) {
                 if expsym.kind() == "identifier" || expsym.kind() == "macro_identifier" {
                     symbols.exported.push(node_value(&expsym, src));
+                } else if expsym.kind() == "line_comment" {
                 } else {
                     print_node(&expsym, src);
                     unex(&expsym);
@@ -1118,6 +1151,7 @@ fn read_file(file_path: &Path) -> io::Result<String> {
 fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     let current_dir = env::current_dir().unwrap();
     change_pwd(&PathBuf::from(&path));
+    println!("loading package {:?} at {:?}", name, path);
     let module = module_from_file(name, &PathBuf::from(path));
     ctx.loaded_modules.insert(name.to_string(), module);
     println!("loaded package {:?} at {:?}", name, path);
@@ -1181,7 +1215,7 @@ fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
                 ctx.loaded_modules.insert(module.name.clone(), module);
             }
         }
-        Err(error) => eprintln!("Failed to read file: {:?}", error),
+        Err(error) => eprintln!("Failed to read file: {} {:?}", name, error),
     }
     Ok(())
 }
