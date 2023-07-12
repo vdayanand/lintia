@@ -320,6 +320,20 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
+        "call_expression" => {
+            if let Some(parseinfo) = include_node(&node, src) {
+                let tree = parseinfo.tree;
+                let newsrc = parseinfo.src;
+                let root = tree.root_node();
+                change_pwd(&PathBuf::from(&newsrc.src_path));
+                let mut tc = root.walk();
+                for child in root.named_children(&mut tc) {
+                    let ss = toplevel_symbol(&child, &newsrc);
+                    syms.extend_from_slice(&ss);
+                }
+                change_pwd(&PathBuf::from(&src.src_path));
+            }
+        }
         "function_definition" | "short_function_definition" => syms_function(node, src, &mut syms),
         "macro_definition" => {
             if let Some(name) = node.named_child(0) {
@@ -429,7 +443,6 @@ fn scoped_eval(
                         if ch.kind() == "identifier" {
                             funenv.push(node_value(&ch, src));
                         }
-                        println!("funenv => {:?}", funenv);
                     }
                 }
             }
@@ -819,7 +832,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 let newsrc = parseinfo.src;
                 let root = tree.root_node();
                 change_pwd(&PathBuf::from(&newsrc.src_path));
-                scoped_eval(ctx, &root, &newsrc, &Vec::<String>::new(), &mut result, 0);
+                scoped_eval(ctx, &root, &newsrc, env, &mut result, 0);
                 change_pwd(&PathBuf::from(&src.src_path));
             } else {
                 for child in node.named_children(&mut tc) {
@@ -990,14 +1003,14 @@ fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
                                     };
                                 let path = fullpath.to_string_lossy().into_owned();
                                 let newsrc = load_jl_file(&fullpath);
-                                let src = Src {
+                                let src_obj = Src {
                                     src_str: newsrc,
                                     src_path: path,
                                 };
-                                let tree = parse_node(&src);
+                                let tree = parse_node(&src_obj);
                                 return Some(ParseInfo {
                                     tree: tree,
-                                    src: src,
+                                    src: src_obj,
                                 });
                             }
                         } else {
