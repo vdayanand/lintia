@@ -472,6 +472,10 @@ fn scoped_eval(
                                     panic!("Unxpected type");
                                 }
                             }
+                        } else if x.kind() == "slurp_parameter" {
+                            if let Some(param) = x.named_child(0) {
+                                newenv.push(node_value(&param, src));
+                            }
                         }
                     }
                 } else if param.kind() == "typed_parameter" {
