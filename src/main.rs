@@ -965,9 +965,15 @@ fn parse_file_args_call(callnode: &Node, src: &Src) -> PathBuf {
         let mut tc = args.walk();
         let mut path = PathBuf::from("./");
         for name in args.named_children(&mut tc) {
+            let mut filename = node_value(&name, src).trim_matches('"').to_string();
+            filename  = if filename == "@__DIR__".to_string()  {
+                "./".to_string()
+            } else {
+                filename
+            };
             path = joinpath(
                 path,
-                PathBuf::from(node_value(&name, src).trim_matches('"')),
+                PathBuf::from(filename)
             )
         }
         println!("path => {:?}", path);
@@ -2291,5 +2297,32 @@ mod tests {
         let errs = lint(&mut ctx, &source_code, &env, None);
         println!("errs => {:?}", errs);
         assert_eq!(errs.len(), 0);
+    }
+    #[test]
+    fn test_mul_declare() {
+        let snip = r#"
+        a = b = 1
+        a
+        b
+        c
+        "#;
+        let env: Vec<String> = vec![];
+        let mut ctx = Ctx {
+            src_module_root: None,
+            current_module: "".to_string(),
+            loaded_modules: HashMap::new(),
+            default_env: vec![],
+        };
+        let source_code = Src {
+            src_str: snip.to_string(),
+            src_path: "<repl>".to_string(),
+        };
+        let mut errs = lint(&mut ctx, &source_code, &env, None);
+        println!("errs => {:?}", errs);
+        assert_eq!(errs.len(), 1);
+        let one = errs.remove(0);
+        assert_eq!(one.symbol, "c".to_string());
+        assert_eq!(one.row, 11);
+        assert_eq!(one.column, 14);
     }
 }
