@@ -1214,14 +1214,18 @@ fn read_file(file_path: &Path) -> io::Result<String> {
 fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     let current_dir = env::current_dir().unwrap();
     change_pwd(&PathBuf::from(&path));
+    let cachefile = format!("/Users/vdayanand/.lintia/{}.json", name);
     println!("loading package {:?} at {:?}", name, path);
-    let module = module_from_file(name, &PathBuf::from(path));
-    let json = serde_json::to_string(&module).unwrap();
-    _ = write_file(
-        &PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)),
-        &json,
-    );
-    ctx.loaded_modules.insert(name.to_string(), module);
+    if let Err(_) = add_deps(ctx, name) {
+        let module = module_from_file(name, &PathBuf::from(path));
+        let json = serde_json::to_string(&module).unwrap();
+        _ = write_file(
+            &PathBuf::from(cachefile),
+            &json,
+            );
+
+        ctx.loaded_modules.insert(name.to_string(), module);
+    }
     println!("loaded package {:?} at {:?}", name, path);
     change_pwd_dir(&current_dir);
 }
