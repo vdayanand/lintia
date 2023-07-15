@@ -5,6 +5,7 @@ use crc32c::{crc32c, crc32c_append};
 use hex;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use shellexpand::tilde;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -16,7 +17,6 @@ use std::path::PathBuf;
 use toml::Value;
 use tree_sitter::{Language, Node, Tree};
 use uuid::Uuid;
-use shellexpand::tilde;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -710,7 +710,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
-                } else if field.kind() == "type_clause" {
+                } else if field.kind() == "type_clause" || field.kind() == "let_statement" || field.kind() == "global_declaration" {
                     result.extend(eval(ctx, &field, src, &env));
                 } else if field.kind() == "function_definition"
                     || field.kind() == "short_function_definition"
@@ -722,8 +722,16 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                         newenv.push("new".to_string());
                     }
                     result.extend(eval(ctx, &field, src, &newenv));
-                } else if field.kind() == "line_comment" || field.kind() == "block_comment" {
+                } else if field.kind() == "line_comment"
+                    || field.kind() == "block_comment"
+                    || field.kind() == "macrocall_expression"
+                {
+                } else if field.kind() == "const_declaration" {
+                    if let Some(typed) = field.named_child(1) {
+                        result.extend(eval(ctx, &typed, src, &env));
+                    }
                 } else {
+                    print_node(&field, src);
                     unex(&field);
                 }
             }
@@ -794,7 +802,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             scoped_eval(ctx, &node, src, &vec![], &mut result, 1);
             ctx.current_module = current_module.to_string();
         }
-        "identifier" => {
+        "identifier" | "operator" => {
             if let Some(failed) = analyse(&ctx, &node, src, env, "normal") {
                 result.push(failed);
             }
@@ -953,7 +961,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             print_syntax_error(node, src);
         }
         _ => {
-            print_node(&node, src);
+            print_node(&node.parent().unwrap(), src);
             panic!("Unimplemented kind {}", node.kind());
         }
     }
@@ -1195,11 +1203,11 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     change_pwd(&PathBuf::from(&path));
     println!("loading package {:?} at {:?}", name, path);
     let module = module_from_file(name, &PathBuf::from(path));
+    let json = serde_json::to_string(&module).unwrap();
+    _ = write_file(&PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)), &json);
     ctx.loaded_modules.insert(name.to_string(), module);
     println!("loaded package {:?} at {:?}", name, path);
     change_pwd_dir(&current_dir);
-    //let json = serde_json::to_string(&mod).unwrap();
-    //_ = write_file(&PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)), &json);
 }
 
 fn load_project(ctx: &mut Ctx, path: &PathBuf) {
@@ -1280,17 +1288,33 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -
     if let Some(pj) = project {
         load_project(ctx, &pj);
     }
-
-    //let uuidmod = module_from_file(
-    //    "UUIDs",
-    //    &PathBuf::from("/Users/vdayanand/code/julia/stdlib/UUIDs/src/UUIDs.jl"),
-    //);
-    //let json = serde_json::to_string(&uuidmod).unwrap();
-    //_ = write_file(&PathBuf::from("/Users/vdayanand/.lintia/test.json"), &json);
+    let stdlibs = load_packages_dir(&PathBuf::from("/Users/vdayanand/code/julia/stdlib/"));
+    for (name, path) in stdlibs {
+        if name == "Artifacts" || name == "InteractiveUtils" || name == "LinearAlgebra" {
+            load_package(ctx, &name, &joinpath(path, PathBuf::from(format!("src/{}.jl", name))).to_string_lossy().to_string())
+        }
+    }
     //    ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
     //    let _ = add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
+}
+
+fn load_packages_dir(dir_path: &Path) -> Vec<(String, PathBuf)> {
+    let mut subdirectories = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                let dir_name = match path.file_name() {
+                    Some(name) => name.to_string_lossy().to_string(),
+                    None => continue,
+                };
+                subdirectories.push((dir_name, path));
+            }
+        }
+    }
+    subdirectories
 }
 
 fn get_env_vec(tomlstr: &str) -> Vec<String> {
