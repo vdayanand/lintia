@@ -448,6 +448,13 @@ fn scoped_eval(
             result.extend(eval(ctx, &child, src, &env));
             continue;
         }
+        if child.kind() == "abstract_definition" || child.kind() == "struct_definition" || child.kind() == "module_definition"  {
+            if let Some(lhs) = child.named_child(0) {
+                if lhs.kind() == "identifier" {
+                    newenv.push(node_value(&lhs, src));
+                }
+            }
+        }
         if child.kind() == "function_definition" || child.kind() == "short_function_definition" {
             syms_function(&child, src, &mut newenv);
             let mut tc = child.walk();
