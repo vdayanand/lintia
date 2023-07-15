@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian};
-use clap::{command, Arg};
+use clap::Parser;
 use colored::Colorize;
 use crc32c::{crc32c, crc32c_append};
 use hex;
@@ -14,8 +14,9 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use toml::Value;
-use tree_sitter::{Language, Node, Parser, Tree};
+use tree_sitter::{Language, Node, Tree};
 use uuid::Uuid;
+use shellexpand::tilde;
 
 extern "C" {
     fn tree_sitter_julia() -> Language;
@@ -176,6 +177,7 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
 fn unex(node: &Node) {
     panic!("Unexpected kind {}", node.kind())
 }
+
 fn syms_assignment(child: &Node, src: &Src, syms: &mut Vec<String>) {
     if let Some(lhs) = child.named_child(0) {
         if lhs.kind() == "identifier" {
@@ -543,9 +545,7 @@ fn scoped_eval(
         if child.kind() == "assignment" {
             syms_assignment(&child, src, &mut newenv)
         }
-        if child.kind() == "typed_parameter"
-            || child.kind() == "optional_parameter"
-        {
+        if child.kind() == "typed_parameter" || child.kind() == "optional_parameter" {
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
@@ -988,15 +988,12 @@ fn parse_file_args_call(callnode: &Node, src: &Src) -> PathBuf {
         let mut path = PathBuf::from("./");
         for name in args.named_children(&mut tc) {
             let mut filename = node_value(&name, src).trim_matches('"').to_string();
-            filename  = if filename == "@__DIR__".to_string()  {
+            filename = if filename == "@__DIR__".to_string() {
                 "./".to_string()
             } else {
                 filename
             };
-            path = joinpath(
-                path,
-                PathBuf::from(filename)
-            )
+            path = joinpath(path, PathBuf::from(filename))
         }
         println!("path => {:?}", path);
         return path;
@@ -1148,7 +1145,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
 }
 
 fn parse_node(src: &Src) -> Tree {
-    let mut parser = Parser::new();
+    let mut parser = tree_sitter::Parser::new();
     let language = unsafe { tree_sitter_julia() };
     parser.set_language(language).unwrap();
     let tree = parser.parse(&src.src_str, None).unwrap();
@@ -1331,48 +1328,54 @@ fn current_pwd() -> PathBuf {
     env::current_dir().unwrap()
 }
 
-fn main() {
-    let matches = command!() // requires `cargo` feature
-        .arg(Arg::new("project"))
-        .arg(Arg::new("file"))
-        .get_matches();
+/// A linter for Julia programming language
+#[derive(clap::Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct LintiaArgs {
+    /// Path to the source file
+    #[arg(value_parser(clap::value_parser!(PathBuf)), value_hint(clap::ValueHint::FilePath))]
+    sourcefile: PathBuf,
 
+    /// Path to the project
+    #[arg(short, long, value_hint(clap::ValueHint::FilePath))]
+    project: Option<String>,
+}
+
+fn main() {
+    let args = LintiaArgs::parse();
+    println!("file => {:?}", args.sourcefile);
+    println!("project => {:?}", args.project);
     if let Ok(current_dir) = env::current_dir() {
         println!("Current working directory: {:?}", current_dir);
     } else {
         eprintln!("Failed to get the current working directory");
     }
 
-    let file = if let Some(file) = matches.get_one::<String>("file") {
-        if let Ok(absolute_path) = fs::canonicalize(file) {
-            absolute_path
-        } else {
-            panic!(
-                "Failed to get the absolute path {} cwd: {:?}",
-                file,
-                current_pwd()
-            );
-        }
+    let file = if let Ok(absolutepath) = args.sourcefile.canonicalize() {
+        absolutepath
     } else {
-        println!("File is missing");
-        return;
+        panic!(
+            "Failed to get the absolute path {:?} cwd: {:?}",
+            args.sourcefile,
+            current_pwd()
+        );
     };
-    let project = if let Some(project) = matches.get_one::<String>("project") {
-        if let Ok(absolute_path) = fs::canonicalize(project) {
-            absolute_path
+
+    let projectfullpath = if let Some(project) = &args.project {
+        let project = tilde(&project).into_owned();
+        if let Ok(absolute_path) = fs::canonicalize(&project) {
+            Some(absolute_path)
         } else {
             panic!(
-                "Failed to get the absolute path {} cwd: {:?}",
+                "Failed to get the absolute path {:?} cwd: {:?}",
                 project,
                 current_pwd()
             );
         }
     } else {
-        println!("Project is missing");
-        return;
+        None
     };
     let src = load_jl_file(&file);
-    //let env = load_env("src/pkgs");
     let boot_env = include_str!("pkgs/boot.toml");
     let mut boot_env_list = get_env_vec(boot_env);
     let base_env = include_str!("pkgs/base.toml");
@@ -1390,7 +1393,7 @@ fn main() {
         src_str: src,
         src_path: file.to_string_lossy().into_owned(),
     };
-    let linfo = lint(&mut ctx, &src, &localenv, Some(project));
+    let linfo = lint(&mut ctx, &src, &localenv, projectfullpath);
     for err in linfo {
         println!(
             "Undefined symbol {} found at row:{} col:{} in {}",
