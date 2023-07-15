@@ -175,7 +175,7 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
 }
 
 fn unex(node: &Node) {
-    panic!("Unexpected kind {}", node.kind())
+    println!("Unexpected kind {}", node.kind())
 }
 
 fn syms_assignment(child: &Node, src: &Src, syms: &mut Vec<String>) {
@@ -212,7 +212,7 @@ fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
             || fname.kind() == "parameter_list"
         {
         } else if fname.kind() == "ERROR" {
-            print_syntax_error(&fname, src);
+            //print_syntax_error(&fname, src);
         } else {
             print_node(&fname, src);
             unex(&fname);
@@ -338,7 +338,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                     }
                 } else {
                     print_node(&node, src);
-                    panic!("Unexpected!!")
+                    unex(&node)
                 }
             }
         }
@@ -486,7 +486,7 @@ fn scoped_eval(
                             }
                         } else {
                             print_node(&lhs, src);
-                            panic!("Unxpected type");
+                            unex(&lhs);
                         }
                     }
                 } else if param.kind() == "keyword_parameters" {
@@ -504,7 +504,7 @@ fn scoped_eval(
                                     }
                                 } else {
                                     print_node(&lhs, src);
-                                    panic!("Unxpected type");
+                                    unex(&lhs);
                                 }
                             }
                         } else if x.kind() == "slurp_parameter" {
@@ -528,7 +528,7 @@ fn scoped_eval(
                 } else if param.kind() == "macrocall_expression" {
                 } else {
                     print_node(&param, src);
-                    panic!("Howzzz");
+                    unex(&param);
                 }
             }
         }
@@ -962,11 +962,11 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
 
         "if_statement" => scoped_eval(ctx, &node, src, env, &mut result, 0),
         "ERROR" => {
-            print_syntax_error(node, src);
+            //print_syntax_error(node, src);
         }
         _ => {
             print_node(&node.parent().unwrap(), src);
-            panic!("Unimplemented kind {}", node.kind());
+            println!("Unimplemented kind {}", node.kind());
         }
     }
     return result;
@@ -992,7 +992,7 @@ fn joinpath(base: PathBuf, path: PathBuf) -> PathBuf {
 fn parse_file_args_call(callnode: &Node, src: &Src) -> PathBuf {
     if let Some(name) = callnode.named_child(0) {
         if node_value(&name, src) != "joinpath" {
-            panic!("Unknown include function")
+            println!("Unknown include function")
         }
     }
     if let Some(args) = callnode.named_child(1) {
@@ -1184,6 +1184,8 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     for modulenode in root_node.named_children(&mut tc) {
         if modulenode.kind() == "module_definition" {
             return construct_module_tree(main_module, &modulenode, &src);
+        } else {
+            println!("modulenode.kind() => {:?}", modulenode.kind());
         }
     }
     panic!("Unexpected state while constructing module")
@@ -1218,6 +1220,7 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
 }
 
 fn load_project(ctx: &mut Ctx, path: &PathBuf) {
+
     let projectfile = path.join(PathBuf::from("Project.toml"));
     let manifestfile = path.join(PathBuf::from("Manifest.toml"));
     // Read the TOML file content
@@ -1251,7 +1254,28 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
                                 name, slug, name
                             );
                             load_package(ctx, &name, &deps_path);
-                        } else {
+                        } else
+                        if let Some(pkgpath) = elem.get("path") {
+                            let pkgpath = pkgpath.as_str().unwrap();
+                            let cwd = current_pwd();
+                            change_pwd_dir(&path);
+                            let file = if let Ok(absolutepath) = fs::canonicalize(&pkgpath) {
+                                absolutepath
+                            } else {
+                                panic!(
+                                    "Failed to get the absolute path {:?} cwd: {:?}",
+                                    pkgpath,
+                                    current_pwd()
+                                );
+                            };
+                            change_pwd_dir(&PathBuf::from(cwd));
+                            let deps_path = format!(
+                                "{}/src/{}.jl",
+                                file.to_string_lossy().to_string(), name
+                            );
+                            load_package(ctx, &name, &deps_path);
+                        }
+                        else {
                             if let Err(_) = add_deps(ctx, &name) {
                                 panic!("failed to load deps")
                             }
