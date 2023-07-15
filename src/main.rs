@@ -176,7 +176,27 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
 fn unex(node: &Node) {
     panic!("Unexpected kind {}", node.kind())
 }
-
+fn syms_assignment(child: &Node, src: &Src, syms: &mut Vec<String>) {
+    if let Some(lhs) = child.named_child(0) {
+        if lhs.kind() == "identifier" {
+            syms.push(node_value(&lhs, src));
+        } else if lhs.kind() == "typed_expression" || lhs.kind() == "typed_parameter" {
+            if let Some(lhstyped) = lhs.named_child(0) {
+                syms.push(node_value(&lhstyped, src));
+            }
+        } else if lhs.kind() == "tuple_expression" || lhs.kind() == "bare_tuple" {
+            let mut tc = lhs.walk();
+            for val in lhs.named_children(&mut tc) {
+                syms.push(node_value(&val, src));
+            }
+        }
+    }
+    if let Some(rhs) = child.named_child(2) {
+        if rhs.kind() == "assignment" {
+            syms_assignment(&rhs, src, syms)
+        }
+    }
+}
 fn syms_function(node: &Node, src: &Src, syms: &mut Vec<String>) {
     if let Some(fname) = node.named_child(0) {
         if fname.kind() == "identifier" || fname.kind() == "operator" {
@@ -520,8 +540,10 @@ fn scoped_eval(
                 }
             }
         }
-        if child.kind() == "assignment"
-            || child.kind() == "typed_parameter"
+        if child.kind() == "assignment" {
+            syms_assignment(&child, src, &mut newenv)
+        }
+        if child.kind() == "typed_parameter"
             || child.kind() == "optional_parameter"
         {
             if let Some(lhs) = child.named_child(0) {
@@ -2322,7 +2344,7 @@ mod tests {
         assert_eq!(errs.len(), 1);
         let one = errs.remove(0);
         assert_eq!(one.symbol, "c".to_string());
-        assert_eq!(one.row, 11);
-        assert_eq!(one.column, 14);
+        assert_eq!(one.row, 5);
+        assert_eq!(one.column, 8);
     }
 }
