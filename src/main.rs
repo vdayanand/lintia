@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use toml::Value;
 use tree_sitter::{Language, Node, Tree};
 use uuid::Uuid;
-
+use std::fmt::Error;
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
@@ -1288,7 +1288,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
                         }
                         else {
                             if let Err(_) = add_deps(ctx, &name) {
-                                panic!("failed to load deps")
+                                println!("failed to load deps")
                             }
                         }
                     }
@@ -1301,6 +1301,9 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
 fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
     let file_path =
         Path::new("/Users/vdayanand/.lintia").join(PathBuf::from(format!("{}.json", name)));
+    if !(file_path.exists() && file_path.is_file()) {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
+    }
     match read_file(&file_path) {
         Ok(contents) => {
             if let Ok(module) = serde_json::from_str::<Module>(&contents) {
@@ -1309,7 +1312,7 @@ fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
         }
         Err(error) => eprintln!("Failed to read file: {} {:?}", name, error),
     }
-    Ok(())
+    return Ok(())
 }
 
 fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -> Vec<UndefVar> {
