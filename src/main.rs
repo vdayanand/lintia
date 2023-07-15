@@ -525,6 +525,7 @@ fn scoped_eval(
                             newenv.push(node_value(&lhs, src));
                         }
                     }
+                } else if param.kind() == "macrocall_expression" {
                 } else {
                     print_node(&param, src);
                     panic!("Howzzz");
@@ -710,7 +711,10 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
-                } else if field.kind() == "type_clause" || field.kind() == "let_statement" || field.kind() == "global_declaration" {
+                } else if field.kind() == "type_clause"
+                    || field.kind() == "let_statement"
+                    || field.kind() == "global_declaration"
+                {
                     result.extend(eval(ctx, &field, src, &env));
                 } else if field.kind() == "function_definition"
                     || field.kind() == "short_function_definition"
@@ -1087,7 +1091,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
             for expsym in child.named_children(&mut tc) {
                 if expsym.kind() == "identifier" || expsym.kind() == "macro_identifier" {
                     symbols.exported.push(node_value(&expsym, src));
-                } else if expsym.kind() == "line_comment" {
+                } else if expsym.kind() == "line_comment" || expsym.kind() == "operator"{
                 } else {
                     print_node(&expsym, src);
                     unex(&expsym);
@@ -1204,7 +1208,10 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     println!("loading package {:?} at {:?}", name, path);
     let module = module_from_file(name, &PathBuf::from(path));
     let json = serde_json::to_string(&module).unwrap();
-    _ = write_file(&PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)), &json);
+    _ = write_file(
+        &PathBuf::from(format!("/Users/vdayanand/.lintia/{}.json", name)),
+        &json,
+    );
     ctx.loaded_modules.insert(name.to_string(), module);
     println!("loaded package {:?} at {:?}", name, path);
     change_pwd_dir(&current_dir);
@@ -1288,12 +1295,13 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -
     if let Some(pj) = project {
         load_project(ctx, &pj);
     }
+    /*
     let stdlibs = load_packages_dir(&PathBuf::from("/Users/vdayanand/code/julia/stdlib/"));
     for (name, path) in stdlibs {
-        if name == "Artifacts" || name == "InteractiveUtils" || name == "LinearAlgebra" {
+        if  name == "InteractiveUtils" || name == "LinearAlgebra" {
             load_package(ctx, &name, &joinpath(path, PathBuf::from(format!("src/{}.jl", name))).to_string_lossy().to_string())
         }
-    }
+    }*/
     //    ctx.loaded_modules.insert("UUIDs".to_string(), uuidmod);
     //    let _ = add_deps(ctx);
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
