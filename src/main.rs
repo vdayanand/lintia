@@ -1171,7 +1171,7 @@ fn parse_node(src: &Src) -> Tree {
     return tree;
 }
 
-fn module_from_file(modname: &str, file: &PathBuf) -> Module {
+fn module_from_file(modname: &str, file: &PathBuf) -> Option<Module> {
     let content = load_jl_file(file);
     let src = Src {
         src_str: content,
@@ -1190,12 +1190,13 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Module {
     let mut tc = root_node.walk();
     for modulenode in root_node.named_children(&mut tc) {
         if modulenode.kind() == "module_definition" {
-            return construct_module_tree(main_module, &modulenode, &src);
+            return Some(construct_module_tree(main_module, &modulenode, &src));
         } else {
             println!("modulenode.kind() => {:?}", modulenode.kind());
         }
     }
-    panic!("Unexpected state while constructing module")
+    println!("Unexpected state while constructing module {}", modname);
+    return None
 }
 
 fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
@@ -1217,14 +1218,15 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     let cachefile = format!("/Users/vdayanand/.lintia/{}.json", name);
     println!("loading package {:?} at {:?}", name, path);
     if let Err(_) = add_deps(ctx, name) {
-        let module = module_from_file(name, &PathBuf::from(path));
-        let json = serde_json::to_string(&module).unwrap();
-        _ = write_file(
-            &PathBuf::from(cachefile),
-            &json,
+        if let Some(module) = module_from_file(name, &PathBuf::from(path)){
+            let json = serde_json::to_string(&module).unwrap();
+            _ = write_file(
+                &PathBuf::from(cachefile),
+                &json,
             );
 
-        ctx.loaded_modules.insert(name.to_string(), module);
+            ctx.loaded_modules.insert(name.to_string(), module);
+        }
     }
     println!("loaded package {:?} at {:?}", name, path);
     change_pwd_dir(&current_dir);
