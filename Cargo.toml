@@ -8,6 +8,7 @@ edition = "2021"
 cc="*"
 
 [dependencies]
+anyhow = "1.0.72"
 byteorder = "1.4.3"
 clap = { version = "4.3.10", features = ["cargo", "derive"] }
 colored = "2.0.0"

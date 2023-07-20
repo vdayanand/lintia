@@ -18,6 +18,7 @@ use toml::Value;
 use tree_sitter::{Language, Node, Tree};
 use uuid::Uuid;
 use std::fmt::Error;
+use anyhow::{Result, anyhow};
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
@@ -1232,15 +1233,12 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     change_pwd_dir(&current_dir);
 }
 
-fn load_project(ctx: &mut Ctx, path: &PathBuf) {
-
+fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()>{
     let projectfile = path.join(PathBuf::from("Project.toml"));
     let manifestfile = path.join(PathBuf::from("Manifest.toml"));
-    // Read the TOML file content
-    let contents = fs::read_to_string(projectfile).expect("Failed to read the file.");
+    let contents = fs::read_to_string(projectfile)?;
     let mut packages: Vec<String> = vec![];
-    // Parse the TOML content into a TOML value
-    let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
+    let toml_value: Value = contents.parse()?;
     if let Some(deps) = toml_value.get("deps") {
         if let Some(table) = deps.as_table() {
             for key in table.keys() {
@@ -1248,7 +1246,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
             }
         }
     }
-    let contents = fs::read_to_string(manifestfile).expect("Failed to read the file.");
+    let contents = fs::read_to_string(manifestfile)?;
     let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
     if let Some(table) = toml_value.as_table() {
         for (name, element) in table {
@@ -1298,6 +1296,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) {
             }
         }
     }
+    Ok(())
 }
 
 fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
@@ -1333,7 +1332,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -
     ctx.src_module_root = Some(modtree);
     ctx.current_module = "Main".to_string();
     if let Some(pj) = project {
-        load_project(ctx, &pj);
+        if let Err(err) = load_project(ctx, &pj) {
+            println!("Failed to load manifest due to {}", err);
+            return vec![]
+        }
     }
     /*
     let stdlibs = load_packages_dir(&PathBuf::from("/Users/vdayanand/code/julia/stdlib/"));
