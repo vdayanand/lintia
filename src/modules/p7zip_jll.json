@@ -1,0 +1,1 @@
+{"name":"p7zip_jll","symbols":{"exported":["p7zip"],"toplevel":["p7zip_jll","Base","PATH_list","LIBPATH_list","PATH","LIBPATH","adjust_ENV!","p7zip","p7zip","init_p7zip_path","__init__","is_available","find_artifact_dir","dev_jll"]},"children":[]}

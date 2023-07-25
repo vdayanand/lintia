@@ -1,0 +1,1 @@
+{"name":"OpenBLAS_jll","symbols":{"exported":["libopenblas"],"toplevel":["OpenBLAS_jll","Base","PATH_list","LIBPATH_list","PATH","LIBPATH","__init__","is_available","find_artifact_dir","dev_jll","get_libopenblas_path"]},"children":[]}

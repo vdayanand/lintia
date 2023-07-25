@@ -1,0 +1,1 @@
+{"name":"PCRE2_jll","symbols":{"exported":["libpcre2_8"],"toplevel":["PCRE2_jll","Base","PATH_list","LIBPATH_list","PATH","LIBPATH","__init__","is_available","find_artifact_dir","dev_jll","get_libpcre2_8_path"]},"children":[]}

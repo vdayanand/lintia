@@ -1,0 +1,1 @@
+{"name":"Mmap","symbols":{"exported":["mmap"],"toplevel":["Mmap","OS_HANDLE","INVALID_OS_HANDLE","PAGESIZE","Anonymous","Anonymous","isopen","isreadable","iswritable","gethandle","mmap","mmap","mmap","mmap","mmap","mmap","mmap","mmap","mmap","mmap","mmap","mmap","MS_ASYNC","MS_INVALIDATE","MS_SYNC","sync!","sync!"]},"children":[]}

@@ -1,0 +1,1 @@
+{"name":"libblastrampoline_jll","symbols":{"exported":["libblastrampoline"],"toplevel":["libblastrampoline_jll","Base","PATH_list","LIBPATH_list","PATH","LIBPATH","libblastrampoline","__init__","is_available","find_artifact_dir","dev_jll","get_libblastrampoline_path"]},"children":[]}
