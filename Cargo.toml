@@ -11,6 +11,7 @@ cc="*"
 anyhow = "1.0.72"
 byteorder = "1.4.3"
 clap = { version = "4.3.10", features = ["cargo", "derive"] }
+color-eyre = "0.6.2"
 colored = "2.0.0"
 crc32c = "0.6.3"
 hex = "0.4.3"
