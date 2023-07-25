@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Parser;
 use colored::Colorize;
@@ -8,6 +9,7 @@ use serde_json;
 use shellexpand::tilde;
 use std::collections::HashMap;
 use std::env;
+use std::fmt::Error;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -17,8 +19,6 @@ use std::path::PathBuf;
 use toml::Value;
 use tree_sitter::{Language, Node, Tree};
 use uuid::Uuid;
-use std::fmt::Error;
-use anyhow::{Result, anyhow};
 extern "C" {
     fn tree_sitter_julia() -> Language;
 }
@@ -449,7 +449,10 @@ fn scoped_eval(
             result.extend(eval(ctx, &child, src, &env));
             continue;
         }
-        if child.kind() == "abstract_definition" || child.kind() == "struct_definition" || child.kind() == "module_definition"  {
+        if child.kind() == "abstract_definition"
+            || child.kind() == "struct_definition"
+            || child.kind() == "module_definition"
+        {
             if let Some(lhs) = child.named_child(0) {
                 if lhs.kind() == "identifier" {
                     newenv.push(node_value(&lhs, src));
@@ -1021,6 +1024,62 @@ fn parse_file_args_call(callnode: &Node, src: &Src) -> PathBuf {
     panic!("Unexpected call node")
 }
 
+fn load_stdlibs(ctx: &mut Ctx) {
+    let mut contents: Vec<String> = vec![];
+    contents.push(include_str!("modules/CRC32c.json").to_string());
+    contents.push(include_str!("modules/Base64.json").to_string());
+    contents.push(include_str!("modules/Dates.json").to_string());
+    contents.push(include_str!("modules/Distributed.json").to_string());
+    contents.push(include_str!("modules/FileWatching.json").to_string());
+    contents.push(include_str!("modules/Future.json").to_string());
+    contents.push(include_str!("modules/GMP_jll.json").to_string());
+    contents.push(include_str!("modules/InteractiveUtils.json").to_string());
+    contents.push(include_str!("modules/LLD_jll.json").to_string());
+    contents.push(include_str!("modules/LLVMLibUnwind_jll.json").to_string());
+    contents.push(include_str!("modules/LazyArtifacts.json").to_string());
+    contents.push(include_str!("modules/LibCURL_jll.json").to_string());
+    contents.push(include_str!("modules/LibGit2.json").to_string());
+    contents.push(include_str!("modules/LibGit2_jll.json").to_string());
+    contents.push(include_str!("modules/LibSSH2_jll.json").to_string());
+    contents.push(include_str!("modules/LibUV_jll.json").to_string());
+    contents.push(include_str!("modules/LibUnwind_jll.json").to_string());
+    contents.push(include_str!("modules/Libdl.json").to_string());
+    contents.push(include_str!("modules/LinearAlgebra.json").to_string());
+    contents.push(include_str!("modules/Logging.json").to_string());
+    contents.push(include_str!("modules/MPFR_jll.json").to_string());
+    contents.push(include_str!("modules/Markdown.json").to_string());
+    contents.push(include_str!("modules/MbedTLS_jll.json").to_string());
+    contents.push(include_str!("modules/Mmap.json").to_string());
+    contents.push(include_str!("modules/MozillaCACerts_jll.json").to_string());
+    contents.push(include_str!("modules/OpenBLAS_jll.json").to_string());
+    contents.push(include_str!("modules/OpenLibm_jll.json").to_string());
+    contents.push(include_str!("modules/PCRE2_jll.json").to_string());
+    contents.push(include_str!("modules/Printf.json").to_string());
+    contents.push(include_str!("modules/Profile.json").to_string());
+    contents.push(include_str!("modules/REPL.json").to_string());
+    contents.push(include_str!("modules/Random.json").to_string());
+    contents.push(include_str!("modules/Serialization.json").to_string());
+    contents.push(include_str!("modules/SharedArrays.json").to_string());
+    contents.push(include_str!("modules/Sockets.json").to_string());
+    contents.push(include_str!("modules/SuiteSparse_jll.json").to_string());
+    contents.push(include_str!("modules/TOML.json").to_string());
+    contents.push(include_str!("modules/Test.json").to_string());
+    contents.push(include_str!("modules/UUIDs.json").to_string());
+    contents.push(include_str!("modules/Unicode.json").to_string());
+    contents.push(include_str!("modules/Zlib_jll.json").to_string());
+    contents.push(include_str!("modules/dSFMT_jll.json").to_string());
+    contents.push(include_str!("modules/libLLVM_jll.json").to_string());
+    contents.push(include_str!("modules/libblastrampoline_jll.json").to_string());
+    contents.push(include_str!("modules/nghttp2_jll.json").to_string());
+    contents.push(include_str!("modules/p7zip_jll.json").to_string());
+
+    for content in contents.iter() {
+        if let Ok(module) = serde_json::from_str::<Module>(&content) {
+            ctx.loaded_modules.insert(module.name.clone(), module);
+        }
+    }
+}
+
 fn include_node(child: &Node, src: &Src) -> Option<ParseInfo> {
     if child.kind() == "call_expression" {
         if let Some(fname) = child.named_child(0) {
@@ -1099,7 +1158,7 @@ fn construct_module_tree(mut current_mod: Module, root_node: &Node, src: &Src) -
             for expsym in child.named_children(&mut tc) {
                 if expsym.kind() == "identifier" || expsym.kind() == "macro_identifier" {
                     symbols.exported.push(node_value(&expsym, src));
-                } else if expsym.kind() == "line_comment" || expsym.kind() == "operator"{
+                } else if expsym.kind() == "line_comment" || expsym.kind() == "operator" {
                 } else {
                     print_node(&expsym, src);
                     unex(&expsym);
@@ -1197,7 +1256,7 @@ fn module_from_file(modname: &str, file: &PathBuf) -> Option<Module> {
         }
     }
     println!("Unexpected state while constructing module {}", modname);
-    return None
+    return None;
 }
 
 fn write_file(file: &PathBuf, content: &String) -> Result<(), std::io::Error> {
@@ -1224,15 +1283,16 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
         }
     };
     let lintia_folder = home_dir.join(".lintia");
-    let cachefile = format!("{}/{}.json", lintia_folder.to_string_lossy().to_string(), name);
+    let cachefile = format!(
+        "{}/{}.json",
+        lintia_folder.to_string_lossy().to_string(),
+        name
+    );
     println!("loading package {:?} at {:?}", name, path);
     if let Err(_) = add_deps(ctx, name) {
-        if let Some(module) = module_from_file(name, &PathBuf::from(path)){
+        if let Some(module) = module_from_file(name, &PathBuf::from(path)) {
             let json = serde_json::to_string(&module).unwrap();
-            _ = write_file(
-                &PathBuf::from(cachefile),
-                &json,
-            );
+            _ = write_file(&PathBuf::from(cachefile), &json);
 
             ctx.loaded_modules.insert(name.to_string(), module);
         }
@@ -1241,7 +1301,7 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     change_pwd_dir(&current_dir);
 }
 
-fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()>{
+fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
     let projectfile = path.join(PathBuf::from("Project.toml"));
     let manifestfile = path.join(PathBuf::from("Manifest.toml"));
     let contents = fs::read_to_string(projectfile)?;
@@ -1273,8 +1333,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()>{
                                 name, slug, name
                             );
                             load_package(ctx, &name, &deps_path);
-                        } else
-                        if let Some(pkgpath) = elem.get("path") {
+                        } else if let Some(pkgpath) = elem.get("path") {
                             let pkgpath = pkgpath.as_str().unwrap();
                             let cwd = current_pwd();
                             change_pwd_dir(&path);
@@ -1288,13 +1347,10 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()>{
                                 );
                             };
                             change_pwd_dir(&PathBuf::from(cwd));
-                            let deps_path = format!(
-                                "{}/src/{}.jl",
-                                file.to_string_lossy().to_string(), name
-                            );
+                            let deps_path =
+                                format!("{}/src/{}.jl", file.to_string_lossy().to_string(), name);
                             load_package(ctx, &name, &deps_path);
-                        }
-                        else {
+                        } else {
                             if let Err(_) = add_deps(ctx, &name) {
                                 println!("failed to load deps")
                             }
@@ -1311,7 +1367,7 @@ fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
     let file_path =
         Path::new("/Users/vdayanand/.lintia").join(PathBuf::from(format!("{}.json", name)));
     if !(file_path.exists() && file_path.is_file()) {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
+        return Err(io::Error::new(io::ErrorKind::NotFound, "File not found"));
     }
     match read_file(&file_path) {
         Ok(contents) => {
@@ -1321,7 +1377,7 @@ fn add_deps(ctx: &mut Ctx, name: &String) -> io::Result<()> {
         }
         Err(error) => eprintln!("Failed to read file: {} {:?}", name, error),
     }
-    return Ok(())
+    return Ok(());
 }
 
 fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -> Vec<UndefVar> {
@@ -1342,9 +1398,10 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -
     if let Some(pj) = project {
         if let Err(err) = load_project(ctx, &pj) {
             println!("Failed to load manifest due to {}", err);
-            return vec![]
+            return vec![];
         }
     }
+    load_stdlibs(ctx);
     /*
     let stdlibs = load_packages_dir(&PathBuf::from("/Users/vdayanand/code/julia/stdlib/"));
     for (name, path) in stdlibs {
