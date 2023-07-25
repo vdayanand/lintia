@@ -2,7 +2,7 @@
 ## Fast static linter for julia (Work In Progress)
 
 ## Prerequites
-Cargo
+[Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
 
 ## Installation
 1.  clone the repo `git clone https://github.com/vdayanand/lintia`
