@@ -1,6 +1,6 @@
 # Lintia
 
-### Fast Static Linter for Julia (Work In Progress)
+### Fast static linter for Julia (Work In Progress)
 
 ## Prerequisites
 * [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
