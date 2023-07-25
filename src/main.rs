@@ -1216,7 +1216,15 @@ fn read_file(file_path: &Path) -> io::Result<String> {
 fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
     let current_dir = env::current_dir().unwrap();
     change_pwd(&PathBuf::from(&path));
-    let cachefile = format!("/Users/vdayanand/.lintia/{}.json", name);
+    let home_dir = match env::var_os("HOME") {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!("Unable to get home directory.");
+            return;
+        }
+    };
+    let lintia_folder = home_dir.join(".lintia");
+    let cachefile = format!("{}/{}.json", lintia_folder.to_string_lossy().to_string(), name);
     println!("loading package {:?} at {:?}", name, path);
     if let Err(_) = add_deps(ctx, name) {
         if let Some(module) = module_from_file(name, &PathBuf::from(path)){
