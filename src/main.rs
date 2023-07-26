@@ -544,7 +544,8 @@ fn scoped_eval(
             }
         }
         if child.kind() == "import_statement" {
-            if let Some(nmodule) = child.named_child(0) {
+            let mut tc = node.walk();
+            for nmodule in child.named_children(&mut tc) {
                 if nmodule.kind() == "identifier" || nmodule.kind() == "relative_qualifier" {
                     let module_name = node_value(&nmodule, src);
                     let mut exported = get_exported_symbols(&ctx, &module_name);
@@ -1800,12 +1801,15 @@ mod tests {
           import A: c, v
           import A: d
           using A: e
+          using P, J
           c
           v
           d
           e
           f
           X
+          P
+          J
         end
         "#;
         let env: Vec<String> = vec![];
@@ -1825,7 +1829,7 @@ mod tests {
 
         let one = errs.remove(0);
         assert_eq!(one.symbol, "f".to_string());
-        assert_eq!(one.row, 11);
+        assert_eq!(one.row, 12);
         assert_eq!(one.column, 10);
     }
     #[test]
