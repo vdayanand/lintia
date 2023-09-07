@@ -594,7 +594,10 @@ fn scoped_eval(
                 newenv.push(node_value(&first, src));
             }
         }
-        if child.kind() == "local_declaration" || child.kind() == "local_statement" || child.kind() == "global_declaration" {
+        if child.kind() == "local_declaration"
+            || child.kind() == "local_statement"
+            || child.kind() == "global_declaration"
+        {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
                 newenv.push(node_value(&var, src))
@@ -724,6 +727,17 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
+                } else if field.kind() == "assignment" {
+                    if let Some(lhs) = field.named_child(0) {
+                        if lhs.kind() == "typed_expression" {
+                            if let Some(typename) = lhs.named_child(1) {
+                                result.extend(eval(ctx, &typename, src, &env));
+                            }
+                        }
+                        if let Some(initval) = field.named_child(2) {
+                            result.extend(eval(ctx, &initval, src, &env));
+                        }
+                    }
                 } else if field.kind() == "type_clause"
                     || field.kind() == "let_statement"
                     || field.kind() == "global_declaration"
@@ -743,7 +757,8 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     || field.kind() == "block_comment"
                     || field.kind() == "macrocall_expression"
                 {
-                } else if field.kind() == "const_declaration" || field.kind() == "const_declaration"{
+                } else if field.kind() == "const_declaration" || field.kind() == "const_declaration"
+                {
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
@@ -1327,7 +1342,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
             if let Some(deps_map) = deps.as_table() {
                 deps_map
             } else {
-              panic!("Unexpected struct in Manifest file")
+                panic!("Unexpected struct in Manifest file")
             }
         } else {
             table
@@ -1367,7 +1382,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
                             load_package(ctx, &name, &deps_path);
                         } else {
                             if let Err(_) = add_deps(ctx, &name) {
-                                println!("{}: failed to load deps {:?}", "WARN".yellow(),name)
+                                println!("{}: failed to load deps {:?}", "WARN".yellow(), name)
                             }
                         }
                     }
@@ -1547,10 +1562,7 @@ fn main() {
     };
     let linfo = lint(&mut ctx, &src, &localenv, projectfullpath);
     if linfo.len() == 0 {
-        println!(
-            "{}",
-            "No errors found".green(),
-        );
+        println!("{}", "No errors found".green(),);
     }
     for err in linfo {
         println!(
@@ -1855,7 +1867,7 @@ mod tests {
         let snip = r#"
         abstract type Animal end
         Base.@kwdef struct Typee <: Animal
-            Y::Int
+            Y::Int=1
             Z
             Typee(U)=new(1,2)
             function Typee(U)
