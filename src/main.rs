@@ -315,7 +315,7 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
 fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
-        "const_declaration" => {
+        "const_declaration" | "const_statement" => {
             if let Some(assign) = node.named_child(0) {
                 if assign.kind() == "assignment" {
                     if let Some(var) = assign.named_child(0) {
@@ -402,7 +402,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "local_declaration" | "global_declaration" => {
+        "local_statement" | "local_declaration" | "global_declaration" => {
             let mut tc = node.walk();
             for var in node.named_children(&mut tc) {
                 syms.push(node_value(&var, src))
@@ -594,7 +594,7 @@ fn scoped_eval(
                 newenv.push(node_value(&first, src));
             }
         }
-        if child.kind() == "local_declaration" || child.kind() == "global_declaration" {
+        if child.kind() == "local_declaration" || child.kind() == "local_statement" || child.kind() == "global_declaration" {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
                 newenv.push(node_value(&var, src))
@@ -630,6 +630,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "quote_expression"
         | "quote_statement"
         | "local_declaration"
+        | "local_statement"
         | "macro_definition" => (),
 
         "function_definition"
@@ -742,7 +743,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     || field.kind() == "block_comment"
                     || field.kind() == "macrocall_expression"
                 {
-                } else if field.kind() == "const_declaration" {
+                } else if field.kind() == "const_declaration" || field.kind() == "const_declaration"{
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
@@ -803,7 +804,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 }
             }
         }
-        "const_declaration" => {
+        "const_declaration" | "const_statement" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
             }
@@ -959,8 +960,11 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
         }
         "type_clause" => {
-            if let Some(typenode) = node.named_child(0) {
-                result.extend(eval(ctx, &typenode, src, &env));
+            let mut tc = node.walk();
+            for typenode in node.named_children(&mut tc) {
+                if typenode.kind() != "operator" {
+                    result.extend(eval(ctx, &typenode, src, &env));
+                }
             }
         }
         "curly_expression" => {
@@ -1274,6 +1278,7 @@ fn read_file(file_path: &Path) -> io::Result<String> {
 }
 
 fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
+    //println!("Loading package {:?}", name);
     let current_dir = env::current_dir().unwrap();
     change_pwd(&PathBuf::from(&path));
     let home_dir = match env::var_os("HOME") {
@@ -1289,7 +1294,7 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
         lintia_folder.to_string_lossy().to_string(),
         name
     );
-    println!("loading package {:?} at {:?}", name, path);
+    //println!("loading package {:?} at {:?}", name, path);
     if let Err(_) = add_deps(ctx, name) {
         if let Some(module) = module_from_file(name, &PathBuf::from(path)) {
             let json = serde_json::to_string(&module).unwrap();
@@ -1298,7 +1303,7 @@ fn load_package(ctx: &mut Ctx, name: &String, path: &String) {
             ctx.loaded_modules.insert(name.to_string(), module);
         }
     }
-    println!("loaded package {:?} at {:?}", name, path);
+    //println!("loaded package {:?} at {:?}", name, path);
     change_pwd_dir(&current_dir);
 }
 
@@ -1318,7 +1323,16 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
     let contents = fs::read_to_string(manifestfile)?;
     let toml_value: Value = contents.parse().expect("Failed to parse the TOML content.");
     if let Some(table) = toml_value.as_table() {
-        for (name, element) in table {
+        let deps = if let Some(deps) = table.get("deps") {
+            if let Some(deps_map) = deps.as_table() {
+                deps_map
+            } else {
+              panic!("Unexpected struct in Manifest file")
+            }
+        } else {
+            table
+        };
+        for (name, element) in deps {
             if !packages.contains(&name) {
                 continue;
             }
@@ -1353,7 +1367,7 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
                             load_package(ctx, &name, &deps_path);
                         } else {
                             if let Err(_) = add_deps(ctx, &name) {
-                                println!("failed to load deps")
+                                println!("{}: failed to load deps {:?}", "WARN".yellow(),name)
                             }
                         }
                     }
@@ -1483,11 +1497,8 @@ struct LintiaArgs {
 
 fn main() {
     let args = LintiaArgs::parse();
-    println!("file => {:?}", args.sourcefile);
-    println!("project => {:?}", args.project);
-    if let Ok(current_dir) = env::current_dir() {
-        println!("Current working directory: {:?}", current_dir);
-    } else {
+    println!("linting file => {:?}", args.sourcefile);
+    if let Err(current_dir) = env::current_dir() {
         eprintln!("Failed to get the current working directory");
     }
 
@@ -1504,6 +1515,7 @@ fn main() {
     let projectfullpath = if let Some(project) = &args.project {
         let project = tilde(&project).into_owned();
         if let Ok(absolute_path) = fs::canonicalize(&project) {
+            println!("project detected => {:?}", absolute_path);
             Some(absolute_path)
         } else {
             panic!(
@@ -1534,6 +1546,12 @@ fn main() {
         src_path: file.to_string_lossy().into_owned(),
     };
     let linfo = lint(&mut ctx, &src, &localenv, projectfullpath);
+    if linfo.len() == 0 {
+        println!(
+            "{}",
+            "No errors found".green(),
+        );
+    }
     for err in linfo {
         println!(
             "Undefined symbol {} found at row:{} col:{} in {}",
