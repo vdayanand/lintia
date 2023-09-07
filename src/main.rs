@@ -1382,7 +1382,9 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
                             load_package(ctx, &name, &deps_path);
                         } else {
                             if let Err(_) = add_deps(ctx, &name) {
-                                println!("{}: failed to load deps {:?}", "WARN".yellow(), name)
+                                if !ctx.loaded_modules.contains_key(name) {
+                                    println!("{}: failed to load deps {:?}", "WARN".yellow(), name);
+                                }
                             }
                         }
                     }
