@@ -315,7 +315,7 @@ fn get_exported_symbols(ctx: &Ctx, module_name: &String) -> Vec<String> {
 fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
     let mut syms = Vec::<String>::new();
     match node.kind() {
-        "const_declaration" => {
+        "const_declaration" | "const_statement" => {
             if let Some(assign) = node.named_child(0) {
                 if assign.kind() == "assignment" {
                     if let Some(var) = assign.named_child(0) {
@@ -402,7 +402,7 @@ fn toplevel_symbol(node: &Node, src: &Src) -> Vec<String> {
                 }
             }
         }
-        "local_declaration" | "global_declaration" => {
+        "local_statement" | "local_declaration" | "global_declaration" => {
             let mut tc = node.walk();
             for var in node.named_children(&mut tc) {
                 syms.push(node_value(&var, src))
@@ -594,7 +594,7 @@ fn scoped_eval(
                 newenv.push(node_value(&first, src));
             }
         }
-        if child.kind() == "local_declaration" || child.kind() == "global_declaration" {
+        if child.kind() == "local_declaration" || child.kind() == "local_statement" || child.kind() == "global_declaration" {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
                 newenv.push(node_value(&var, src))
@@ -630,6 +630,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         | "quote_expression"
         | "quote_statement"
         | "local_declaration"
+        | "local_statement"
         | "macro_definition" => (),
 
         "function_definition"
@@ -742,7 +743,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                     || field.kind() == "block_comment"
                     || field.kind() == "macrocall_expression"
                 {
-                } else if field.kind() == "const_declaration" {
+                } else if field.kind() == "const_declaration" || field.kind() == "const_declaration"{
                     if let Some(typed) = field.named_child(1) {
                         result.extend(eval(ctx, &typed, src, &env));
                     }
@@ -803,7 +804,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 }
             }
         }
-        "const_declaration" => {
+        "const_declaration" | "const_statement" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
             }
@@ -959,8 +960,11 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             }
         }
         "type_clause" => {
-            if let Some(typenode) = node.named_child(0) {
-                result.extend(eval(ctx, &typenode, src, &env));
+            let mut tc = node.walk();
+            for typenode in node.named_children(&mut tc) {
+                if typenode.kind() != "operator" {
+                    result.extend(eval(ctx, &typenode, src, &env));
+                }
             }
         }
         "curly_expression" => {
