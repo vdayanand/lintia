@@ -499,7 +499,7 @@ fn scoped_eval(
                             unex(&lhs);
                         }
                     }
-                } else if param.kind() == "keyword_parameters" {
+                } else if param.kind() == "keyword_parameters" || param.kind() == "tuple_expression"{
                     let mut tc = param.walk();
                     for x in param.named_children(&mut tc) {
                         if x.kind() == "identifier" {
