@@ -678,14 +678,21 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
                 result.extend(eval(ctx, &second, src, &env));
             }
         }
-        "comprehension_expression" => {
+        "comprehension_expression" | "parenthesized_expression" => {
             let mut newenv = Vec::<String>::new();
             newenv.extend_from_slice(&env);
             if let Some(clause) = node.named_child(1) {
                 if clause.kind() == "for_clause" {
                     if let Some(binding) = clause.named_child(0) {
                         if let Some(var) = binding.named_child(0) {
-                            newenv.push(node_value(&var, src))
+                            if var.kind() == "identifier" {
+                                newenv.push(node_value(&var, src))
+                            } else if var.kind() == "tuple_expression" {
+                                let mut tc = var.walk();
+                                for name in var.named_children(&mut tc) {
+                                    newenv.push(node_value(&name, src))
+                                }
+                            }
                         }
                         if let Some(expr) = binding.named_child(1) {
                             result.extend(eval(ctx, &expr, src, &env));
@@ -702,8 +709,8 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
         "macrocall_expression" => {
             scoped_eval(ctx, &node, src, env, &mut result, 0);
         }
-        "parenthesized_expression"
-        | "global_declaration"
+        //"parenthesized_expression"
+         "global_declaration"
         | "slurp_parameter"
         | "interpolation_expression" => {
             if let Some(rnode) = node.named_child(0) {
