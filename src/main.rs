@@ -419,7 +419,14 @@ fn sym_for_binding(node: &Node, src: &Src, env: &mut Vec<String>) {
         if lhs.kind() == "tuple_expression" {
             let mut tc = lhs.walk();
             for param in lhs.named_children(&mut tc) {
-                env.push(node_value(&param, src));
+                if param.kind() == "identifier" {
+                    env.push(node_value(&param, src));
+                } else if param.kind() == "tuple_expression"{
+                    let mut tc = param.walk();
+                    for name in param.named_children(&mut tc) {
+                        env.push(node_value(&name, src));
+                    }
+                }
             }
         }
         if lhs.kind() == "typed_expression" {
