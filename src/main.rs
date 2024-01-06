@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Parser;
 use colored::Colorize;
@@ -9,7 +9,6 @@ use serde_json;
 use shellexpand::tilde;
 use std::collections::HashMap;
 use std::env;
-use std::fmt::Error;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -609,9 +608,10 @@ fn scoped_eval(
         result.extend(eval(ctx, &child, src, &newenv));
     }
 }
-fn print_syntax_error(node: &Node, src: &Src) {
-    panic!("Syntax Error at line {} in {}", row(node) + 1, src.src_path)
-}
+
+//fn print_syntax_error(node: &Node, src: &Src) {
+//    panic!("Syntax Error at line {} in {}", row(node) + 1, src.src_path)
+//}
 
 fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVar> {
     let mut result = Vec::<UndefVar>::new();
@@ -1446,7 +1446,7 @@ fn lint(ctx: &mut Ctx, src: &Src, env: &Vec<String>, project: Option<PathBuf>) -
     scoped_eval(ctx, &root_node, src, env, &mut result, 0);
     return result;
 }
-
+/*
 fn load_packages_dir(dir_path: &Path) -> Vec<(String, PathBuf)> {
     let mut subdirectories = Vec::new();
     if let Ok(entries) = fs::read_dir(dir_path) {
@@ -1463,7 +1463,7 @@ fn load_packages_dir(dir_path: &Path) -> Vec<(String, PathBuf)> {
     }
     subdirectories
 }
-
+*/
 fn get_env_vec(tomlstr: &str) -> Vec<String> {
     let parsed_toml: Value = toml::from_str(&tomlstr).expect("Failed to parse TOML");
     if let Some(envs) = parsed_toml.get("envs") {
@@ -1515,7 +1515,7 @@ struct LintiaArgs {
 fn main() {
     let args = LintiaArgs::parse();
     println!("linting file => {:?}", args.sourcefile);
-    if let Err(current_dir) = env::current_dir() {
+    if let Err(_) = env::current_dir() {
         eprintln!("Failed to get the current working directory");
     }
 
