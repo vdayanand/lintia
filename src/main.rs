@@ -599,7 +599,15 @@ fn scoped_eval(
         {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
-                newenv.push(node_value(&var, src))
+                if var.kind() == "expression" {
+                    newenv.push(node_value(&var, src));
+                }
+                else if var.kind() == "tuple_expression" || var.kind() == "bare_tuple" {
+                    let mut tc = var.walk();
+                    for val in var.named_children(&mut tc) {
+                        newenv.push(node_value(&val, src));
+                    }
+                }
             }
         }
         if child.kind() == "for_binding" {
@@ -2362,7 +2370,7 @@ mod tests {
     #[test]
     fn test_for_clause() {
         let snip = r#"
-         local Dict
+         local Dict, X
          Dict(string(k) => nothing for (k, v) in pairs(tab))
         "#;
         let env: Vec<String> = vec![
