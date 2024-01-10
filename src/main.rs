@@ -1383,10 +1383,16 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
                             let uuid = uuid.as_str().unwrap();
                             let gittreesha1 = git_tree_sha1.as_str().unwrap();
                             let slug = version_slug(uuid, gittreesha1);
-                            let deps_path = format!(
-                                "/Users/vdayanand/.julia/packages/{}/{}/src/{}.jl",
+                            let home_dir = match env::var_os("HOME") {
+                                Some(path) => PathBuf::from(path),
+                                None => {
+                                    panic!("Unable to get home directory.");
+                                }
+                            };
+                            let deps_path =home_dir.join(format!(
+                                ".julia/packages/{}/{}/src/{}.jl",
                                 name, slug, name
-                            );
+                            )).to_string_lossy().into_owned();
                             load_package(ctx, &name, &deps_path);
                         } else if let Some(pkgpath) = elem.get("path") {
                             let pkgpath = pkgpath.as_str().unwrap();
