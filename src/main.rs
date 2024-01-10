@@ -22,6 +22,35 @@ extern "C" {
     fn tree_sitter_julia() -> Language;
 }
 
+#[derive(Debug)]
+struct UndefVar {
+    symbol: String,
+    row: usize,
+    column: usize,
+    filepath: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Module {
+    name: String,
+    symbols: Symbols,
+    children: Vec<Module>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Symbols {
+    exported: Vec<String>,
+    toplevel: Vec<String>,
+}
+
+#[derive(Debug)]
+struct Ctx {
+    src_module_root: Option<Module>,
+    current_module: String,
+    loaded_modules: HashMap<String, Module>,
+    default_env: Vec<String>,
+}
+
 const SLUG_CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 fn reverse_string(input: &str) -> String {
     let mut chars: Vec<char> = input.chars().collect();
@@ -60,35 +89,6 @@ fn version_slug(uuid: &str, sha: &str) -> String {
     let uuidobj = Uuid::parse_str(uuid).unwrap();
     let hash = crc32c_uuidhash(uuidobj, sha);
     return slug(hash, 5);
-}
-
-#[derive(Debug)]
-struct UndefVar {
-    symbol: String,
-    row: usize,
-    column: usize,
-    filepath: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Module {
-    name: String,
-    symbols: Symbols,
-    children: Vec<Module>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Symbols {
-    exported: Vec<String>,
-    toplevel: Vec<String>,
-}
-
-#[derive(Debug)]
-struct Ctx {
-    src_module_root: Option<Module>,
-    current_module: String,
-    loaded_modules: HashMap<String, Module>,
-    default_env: Vec<String>,
 }
 
 fn print_node(node: &tree_sitter::Node, src: &Src) {
@@ -155,6 +155,9 @@ fn analyse(ctx: &Ctx, node: &Node, src: &Src, env: &Vec<String>, idtype: &str) -
     } else {
         node_value(&node, src)
     };
+    if sym == "_" {
+        return None;
+    }
     let found = if let Some(current_mo) = &ctx.src_module_root {
         is_symbol_defined(current_mo, &ctx.current_module, &sym, &current_mo.name)
     } else {
