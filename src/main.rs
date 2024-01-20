@@ -1539,12 +1539,16 @@ struct LintiaArgs {
     sourcefile: PathBuf,
 
     /// Path to the project
-    #[arg(short, long, value_hint(clap::ValueHint::FilePath))]
+    #[arg(long, value_hint(clap::ValueHint::FilePath))]
     project: Option<String>,
 
     /// response as JSON
     #[clap(short, long)]
     out_json: bool,
+
+    /// response pretty
+    #[clap(long, short)]
+    pretty: bool,
 }
 
 fn main() {
@@ -1580,7 +1584,7 @@ fn main() {
         None
     };
     let out_json = args.out_json;
-    println!("json_out => {:?}", out_json);
+    let pretty = args.pretty;
     let src = load_jl_file(&file);
     let boot_env = include_str!("pkgs/boot.toml");
     let mut boot_env_list = get_env_vec(boot_env);
@@ -1605,19 +1609,17 @@ fn main() {
             eprintln!("{}", "No errors found".green(),);
         }
     }
-    if !out_json {
-        for err in linfo {
-            eprintln!(
-                "Undefined symbol {} found at row:{} col:{} in {}",
-                err.symbol.red(),
-                err.row,
-                err.column,
-                err.filepath
-            );
-        }
-    } else {
+    if out_json {
         let json_string = serde_json::to_string(&linfo).expect("Failed to serialize to JSON");
         eprintln!("{}", json_string)
+    } else if pretty {
+        for err in linfo {
+            eprintln!("Undefined symbol {} in {} at {}:{} ", err.symbol.red(), err.filepath, err.row, err.column);
+        }
+    } else {
+        for err in linfo {
+            eprintln!("{}:{}: error:{}", err.filepath, err.row, err.symbol);
+        }
     }
 }
 #[cfg(test)]
