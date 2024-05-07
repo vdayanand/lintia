@@ -424,7 +424,7 @@ fn sym_for_binding(node: &Node, src: &Src, env: &mut Vec<String>) {
             for param in lhs.named_children(&mut tc) {
                 if param.kind() == "identifier" {
                     env.push(node_value(&param, src));
-                } else if param.kind() == "tuple_expression"{
+                } else if param.kind() == "tuple_expression" {
                     let mut tc = param.walk();
                     for name in param.named_children(&mut tc) {
                         env.push(node_value(&name, src));
@@ -509,7 +509,8 @@ fn scoped_eval(
                             unex(&lhs);
                         }
                     }
-                } else if param.kind() == "keyword_parameters" || param.kind() == "tuple_expression"{
+                } else if param.kind() == "keyword_parameters" || param.kind() == "tuple_expression"
+                {
                     let mut tc = param.walk();
                     for x in param.named_children(&mut tc) {
                         if x.kind() == "identifier" {
@@ -611,8 +612,7 @@ fn scoped_eval(
             for var in child.named_children(&mut tc) {
                 if var.kind() == "expression" {
                     newenv.push(node_value(&var, src));
-                }
-                else if var.kind() == "tuple_expression" || var.kind() == "bare_tuple" {
+                } else if var.kind() == "tuple_expression" || var.kind() == "bare_tuple" {
                     let mut tc = var.walk();
                     for val in var.named_children(&mut tc) {
                         newenv.push(node_value(&val, src));
@@ -720,9 +720,7 @@ fn eval(ctx: &mut Ctx, node: &Node, src: &Src, env: &Vec<String>) -> Vec<UndefVa
             scoped_eval(ctx, &node, src, env, &mut result, 0);
         }
         //"parenthesized_expression"
-         "global_declaration"
-        | "slurp_parameter"
-        | "interpolation_expression" => {
+        "global_declaration" | "slurp_parameter" | "interpolation_expression" => {
             if let Some(rnode) = node.named_child(0) {
                 result.extend(eval(ctx, &rnode, src, env));
             }
@@ -1389,10 +1387,10 @@ fn load_project(ctx: &mut Ctx, path: &PathBuf) -> Result<()> {
                                     panic!("Unable to get home directory.");
                                 }
                             };
-                            let deps_path =home_dir.join(format!(
-                                ".julia/packages/{}/{}/src/{}.jl",
-                                name, slug, name
-                            )).to_string_lossy().into_owned();
+                            let deps_path = home_dir
+                                .join(format!(".julia/packages/{}/{}/src/{}.jl", name, slug, name))
+                                .to_string_lossy()
+                                .into_owned();
                             load_package(ctx, &name, &deps_path);
                         } else if let Some(pkgpath) = elem.get("path") {
                             let pkgpath = pkgpath.as_str().unwrap();
@@ -1614,7 +1612,13 @@ fn main() {
         eprintln!("{}", json_string)
     } else if pretty {
         for err in linfo {
-            eprintln!("Undefined symbol {} in {} at {}:{} ", err.symbol.red(), err.filepath, err.row, err.column);
+            eprintln!(
+                "Undefined symbol {} in {} at {}:{} ",
+                err.symbol.red(),
+                err.filepath,
+                err.row,
+                err.column
+            );
         }
     } else {
         for err in linfo {
