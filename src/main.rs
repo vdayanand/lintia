@@ -610,13 +610,20 @@ fn scoped_eval(
         {
             let mut tc = child.walk();
             for var in child.named_children(&mut tc) {
-                if var.kind() == "expression" {
-                    newenv.push(node_value(&var, src));
+                if var.kind() == "assignment" {
+                    if let Some(lhs) = var.named_child(0) {
+                        newenv.push(node_value(&lhs, src));
+                    }
+                    if let Some(rhs) = var.named_child(2) {
+                        result.extend(eval(ctx, &rhs, src, &newenv));
+                    }
                 } else if var.kind() == "tuple_expression" || var.kind() == "bare_tuple" {
                     let mut tc = var.walk();
                     for val in var.named_children(&mut tc) {
                         newenv.push(node_value(&val, src));
                     }
+                } else if var.kind() == "identifier" {
+                    newenv.push(node_value(&var, src));
                 }
             }
         }
