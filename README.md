@@ -14,5 +14,5 @@
    ```
    For example: 
    ```
-   cargo run ~/code/Example/src/Example.jl --project=~/code/Example
+   cargo run ~/code/Example/src/Example.jl --project=~/code/Example -p
    ```
